@@ -129,3 +129,113 @@ void M4_SetDir(MotorDir_t dir)
 	case MOTOR_STOP:	GPIO_SetBits(GPIOB,GPIO_Pin_14); GPIO_SetBits(GPIOB,GPIO_Pin_15); break;
 	}
 }
+/**
+ * @brief 小车直行前进
+ * @param speed PWM 0~3599
+ */
+void Car_GoStraight(uint16_t speed)
+{
+    //左轮
+    M1_SetDir(MOTOR_FORWARD);
+    M2_SetDir(MOTOR_FORWARD);
+    M1_SetPWM(speed);
+    M2_SetPWM(speed);
+
+    //右轮，底盘镜像，前进需要BACKWARD
+    M3_SetDir(MOTOR_BACKWARD);
+    M4_SetDir(MOTOR_BACKWARD);
+    M3_SetPWM(speed);
+    M4_SetPWM(speed);
+}
+
+/**
+ * @brief 小车后退
+ */
+void Car_GoBack(uint16_t speed)
+{
+    M1_SetDir(MOTOR_BACKWARD);
+    M2_SetDir(MOTOR_BACKWARD);
+    M1_SetPWM(speed);
+    M2_SetPWM(speed);
+
+    M3_SetDir(MOTOR_FORWARD);
+    M4_SetDir(MOTOR_FORWARD);
+    M3_SetPWM(speed);
+    M4_SetPWM(speed);
+}
+
+/**
+ * @brief 全部刹车停止
+ */
+void Car_Stop(void)
+{
+    M1_SetDir(MOTOR_STOP);
+    M2_SetDir(MOTOR_STOP);
+    M3_SetDir(MOTOR_STOP);
+    M4_SetDir(MOTOR_STOP);
+}
+
+/**
+ * @brief 原地左转（左轮向后，右轮向前，自旋）
+ */
+void Car_TurnLeft(uint16_t speed)
+{
+    M1_SetDir(MOTOR_BACKWARD);
+    M2_SetDir(MOTOR_BACKWARD);
+    M1_SetPWM(speed);
+    M2_SetPWM(speed);
+
+    M3_SetDir(MOTOR_BACKWARD);
+    M4_SetDir(MOTOR_BACKWARD);
+    M3_SetPWM(speed);
+    M4_SetPWM(speed);
+}
+
+/**
+ * @brief 原地右转（左轮向前，右轮向后，自旋）
+ */
+void Car_TurnRight(uint16_t speed)
+{
+    M1_SetDir(MOTOR_FORWARD);
+    M2_SetDir(MOTOR_FORWARD);
+    M1_SetPWM(speed);
+    M2_SetPWM(speed);
+
+    M3_SetDir(MOTOR_FORWARD);
+    M4_SetDir(MOTOR_FORWARD);
+    M3_SetPWM(speed);
+    M4_SetPWM(speed);
+}
+
+/**
+ * @brief 差速左转（一边减速，一边全速，转弯同时向前走，推荐巡线用）
+ */
+void Car_SpinLeft(uint16_t speed)
+{
+    uint16_t slow = speed / 2; //左轮减半，保持前进方向
+    M1_SetDir(MOTOR_FORWARD);
+    M2_SetDir(MOTOR_FORWARD);
+    M1_SetPWM(slow);
+    M2_SetPWM(slow);
+
+    M3_SetDir(MOTOR_BACKWARD);
+    M4_SetDir(MOTOR_BACKWARD);
+    M3_SetPWM(speed);
+    M4_SetPWM(speed);
+}
+
+/**
+ * @brief 差速右转
+ */
+void Car_SpinRight(uint16_t speed)
+{
+    M1_SetDir(MOTOR_FORWARD);
+    M2_SetDir(MOTOR_FORWARD);
+    M1_SetPWM(speed);
+    M2_SetPWM(speed);
+
+    M3_SetDir(MOTOR_BACKWARD);
+    M4_SetDir(MOTOR_BACKWARD);
+    M3_SetPWM(speed / 2);
+    M4_SetPWM(speed / 2);
+}

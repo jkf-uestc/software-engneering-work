@@ -24,5 +24,14 @@ void M1_SetDir(MotorDir_t dir);
 void M2_SetDir(MotorDir_t dir);
 void M3_SetDir(MotorDir_t dir);
 void M4_SetDir(MotorDir_t dir);
+ // speed范围：0 ~ 3599
+ void Car_GoStraight(uint16_t speed);    //直行
+ void Car_GoBack(uint16_t speed);        //后退
+ void Car_Stop(void);                    //全部刹车停止
+ void Car_TurnLeft(uint16_t speed);      //原地左转（左轮反向，右轮前进）
+ void Car_TurnRight(uint16_t speed);     //原地右转（右轮反向，左轮前进）
+ void Car_SpinLeft(uint16_t speed);      //差速左转（左轮慢，右轮快，不原地打转）
+ void Car_SpinRight(uint16_t speed);     //差速右转
+
 
 #endif
