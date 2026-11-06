@@ -26,38 +26,29 @@
  *   声速约 340m/s，往返 1cm 需要 58us（去 29 + 回 29）。
  *   所以   距离(mm) = 高电平宽度(us) * 10 / 58
  *   例：测到 5800us -> 1000mm = 1m
- *
- * 三个坑，代码里都处理了（你读 .c 的时候对照看）：
+ 
+ * 特殊情况处理：
  *   1) 没有回波时 ECHO 一直是低，永远等不到下降沿 -> 必须有超时（30ms）
  *   2) 上一次还没测完就再触发，会把等待标志冲掉，超时永远不触发 -> Trigger 里加 if(s_wait) return
  *   3) 单次测量会抖，尤其打在地面/斜面上 -> 三次取中值
  * ========================================================================== */
 
-/* ---- 可调参数 ------------------------------------------------------------ */
-#define SONAR_PERIOD_MS     20      /* 多久测一次。需求 FR-30 要求 20ms */
-#define SONAR_TIMEOUT_MS    30      /* 超过这么久没回波 = 当次无效 */
-#define SONAR_MIN_VALID_US 200      /* 短于 200us 的脉冲是噪声（约 3.4cm 以内） */
-#define SONAR_MAX_MM      4000      /* 量程上限，超出就截断 */
+#define SONAR_PERIOD_MS     20      /*20ms测一次*/
+#define SONAR_TIMEOUT_MS    30      /*判定无效的阈值30ms*/
+#define SONAR_MIN_VALID_US 200      /*短于200us的脉冲判定为噪声（约 3.4cm 以内）*/
+#define SONAR_MAX_MM      4000      /* 量程上限4m，超出就截断 */
 
-/* ---- 测量状态（Sonar_GetStatus 的返回值，调试时看它最快定位问题） --------- */
-#define SONAR_ST_WAIT      0        /* 已发波，正在等回波 */
-#define SONAR_ST_OK        1        /* 本次拿到有效距离 */
-#define SONAR_ST_TIMEOUT   2        /* 30ms 没回波：前方太空 / 探头没接 / 线断 */
-#define SONAR_ST_NOISE     3        /* 回波太短，当噪声丢弃 */
+#define SONAR_ST_WAIT      0        /*已发波，正在等回波 */
+#define SONAR_ST_OK        1        /*本次拿到有效距离 */
+#define SONAR_ST_TIMEOUT   2        /*30ms 没回波*/
+#define SONAR_ST_NOISE     3        /*回波太短，当噪声丢弃*/
 
-/* ---- 对外接口 ------------------------------------------------------------ */
-void     Sonar_Init(void);          /* 初始化 PB4/PB5 + EXTI4，上电先调一次 */
+void     Sonar_Init(void);          
+void     Sonar_Task(void);          /*主循环每轮调。内部自己限速 20ms*/
+void     Sonar_Trigger(void);       /*手动发一次 10us 触发脉冲（调试用；平时 Sonar_Task 自己会调，不要重复调）*/
 
-void     Sonar_Task(void);          /* 主循环每轮调。内部自己限速 20ms，
-                                       并且自动发出下一次触发脉冲，不用别人管 */
-
-void     Sonar_Trigger(void);       /* 手动发一次 10us 触发脉冲（调试用；
-                                       平时 Sonar_Task 自己会调，不要重复调） */
-
-uint16_t Sonar_GetMm(void);         /* 最近一次距离，单位毫米（三次取中值） */
-
-uint8_t  Sonar_IsValid(void);       /* 1 = 这个距离可信；0 = 超时/噪声，别拿它做判断 */
-
-uint8_t  Sonar_GetStatus(void);     /* SONAR_ST_xxx，见上面 */
+uint16_t Sonar_GetMm(void);         /*最近一次距离，单位毫米（三次取中值）*/
+uint8_t  Sonar_IsValid(void);       /*1 = 这个距离可信；0 = 超时/噪声*/
+uint8_t  Sonar_GetStatus(void);     /*检查状态SONAR_ST_xxx*/
 
 #endif
