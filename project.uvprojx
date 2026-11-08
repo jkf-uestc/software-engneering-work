@@ -134,11 +134,11 @@
             <RunIndependent>0</RunIndependent>
             <UpdateFlashBeforeDebugging>1</UpdateFlashBeforeDebugging>
             <Capability>1</Capability>
-            <DriverSelection>-1</DriverSelection>
+            <DriverSelection>4096</DriverSelection>
           </Flash1>
           <bUseTDR>1</bUseTDR>
           <Flash2>BIN\UL2CM3.DLL</Flash2>
-          <Flash3></Flash3>
+          <Flash3>"" ()</Flash3>
           <Flash4></Flash4>
           <pFcarmOut></pFcarmOut>
           <pFcarmGrp></pFcarmGrp>
@@ -703,6 +703,36 @@
               <FileName>OLED_Font.h</FileName>
               <FileType>5</FileType>
               <FilePath>.\Hardware\OLED_Font.h</FilePath>
+            </File>
+            <File>
+              <FileName>BlueTooth.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Hardware\BlueTooth.c</FilePath>
+            </File>
+            <File>
+              <FileName>BlueTooth.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\Hardware\BlueTooth.h</FilePath>
+            </File>
+            <File>
+              <FileName>Sonar.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Hardware\Sonar.c</FilePath>
+            </File>
+            <File>
+              <FileName>Sonar.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\Hardware\Sonar.h</FilePath>
+            </File>
+            <File>
+              <FileName>Tick.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Hardware\Tick.c</FilePath>
+            </File>
+            <File>
+              <FileName>Tick.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\Hardware\Tick.h</FilePath>
             </File>
           </Files>
         </Group>

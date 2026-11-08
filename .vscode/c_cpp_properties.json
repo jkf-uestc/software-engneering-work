@@ -3,11 +3,11 @@
         {
             "name": "Target_1",
             "includePath": [
-                "c:\\Users\\ZYT\\Desktop\\机器人综设\\robot\\Library",
-                "c:\\Users\\ZYT\\Desktop\\机器人综设\\robot\\start",
-                "c:\\Users\\ZYT\\Desktop\\机器人综设\\robot\\User",
-                "c:\\Users\\ZYT\\Desktop\\机器人综设\\robot\\System",
-                "c:\\Users\\ZYT\\Desktop\\机器人综设\\robot\\Hardware",
+                "c:\\Users\\ZYT\\Desktop\\robot_project\\robot\\Library",
+                "c:\\Users\\ZYT\\Desktop\\robot_project\\robot\\start",
+                "c:\\Users\\ZYT\\Desktop\\robot_project\\robot\\User",
+                "c:\\Users\\ZYT\\Desktop\\robot_project\\robot\\System",
+                "c:\\Users\\ZYT\\Desktop\\robot_project\\robot\\Hardware",
                 "C:\\Users\\ZYT\\AppData\\Local\\Keil_v5\\ARM\\ARMCC\\include",
                 "C:\\Users\\ZYT\\AppData\\Local\\Keil_v5\\ARM\\ARMCC\\include\\arm_linux",
                 "C:\\Users\\ZYT\\AppData\\Local\\Keil_v5\\ARM\\ARMCC\\include\\arm_linux_compat",
