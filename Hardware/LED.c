@@ -3,7 +3,6 @@
 
 #include "stm32f10x.h"                  // Device header
 #include "LED.h"
-
 /*---------------------------- 引脚映射（只在本文件出现） ----------------------------*/
 /* 业务代码一律不碰 GPIO，改脚只改这里 */
 #define LED_RDY_PORT        GPIOC
