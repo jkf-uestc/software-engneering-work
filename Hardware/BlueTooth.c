@@ -5,7 +5,8 @@
 uint8_t BlueTooth_TxPacket[4];				//定义发送数据包数组，数据包格式：FF 01 02 03 04 FE
 uint8_t BlueTooth_RxPacket[4];				//定义接收数据包数组
 uint8_t BlueTooth_RxFlag;					//定义接收数据包标志位
-
+uint8_t ForwardPacket[4]={0x00,0x00,0x00,0x00};
+uint8_t StopPacket[4]={0x00,0x00,0x00,0x04};
 /*
 发送的数据包格式
 	FF 01 02 03 04 FE
@@ -202,6 +203,33 @@ uint8_t BlueTooth_GetFirstRxData(void)
 	uint8_t RxData_f;
 	RxData_f = BlueTooth_RxPacket[0];		
 	return RxData_f;		//返回接收到的数据
+}
+/**
+  * 函    数：分支判断函数
+  * 参    数：接收数据包，参考数据包
+  * 返 回 值：分支判断值
+  * 注意事项：无
+  */
+uint8_t BlueTooth_CmpRxPacket(uint8_t *BlueTooth_RxPacket, uint8_t *ReferencePacket)
+{
+	int i;
+	for(i=0;i<4;i++){
+		if(BlueTooth_RxPacket[i] != ReferencePacket[i]){
+			return 0;
+		}
+	}
+	return 1;
+}
+
+int BlueTooth_action(void)
+{
+	if(BlueTooth_CmpRxPacket(BlueTooth_RxPacket, ForwardPacket)){
+		return 0;
+	}
+	if(BlueTooth_CmpRxPacket(BlueTooth_RxPacket, StopPacket)){
+		return 4;
+	}
+	return -1;
 }
 
 

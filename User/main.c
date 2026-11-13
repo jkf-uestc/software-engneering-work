@@ -2,6 +2,7 @@
 #include "Delay.h"
 #include "OLED.h"
 #include "BlueTooth.h"
+#include "motor.h"
 /*
 int main(void)
 {
@@ -25,18 +26,39 @@ int main(void)
 	/*模块初始化*/
 	OLED_Init();		//OLED初始化
 	BlueTooth_Init();	//蓝牙初始化
-	
-	/*显示静态字符串*/
-	OLED_ShowString(1, 1, "RxData:");
-	
-	uint8_t RxData_f;		//定义接收数据变量
+	Motor_Init();       //电机初始化
+
+    /*速度设置*/
+	// M1
+    M1_SetDir(MOTOR_FORWARD);
+    M1_SetPWM(1800);
+
+    // M2
+    M2_SetDir(MOTOR_FORWARD);
+    M2_SetPWM(1800);
+
+    // M3
+    M3_SetDir(MOTOR_BACKWARD);
+    M3_SetPWM(1800);
+
+    // M4
+    M4_SetDir(MOTOR_BACKWARD);
+    M4_SetPWM(1800);
+
+
 	while (1)
 	{
-		if (BlueTooth_GetRxFlag() == 1)			//检查蓝牙接收数据的标志位
+		if (BlueTooth_GetRxFlag() == 1)			//检查蓝牙接收数据的标志位，为1表示接收到数据包，然后标志位清零
 		{
-			RxData_f = BlueTooth_GetFirstRxData();		//获取蓝牙接收的数据
-			BlueTooth_SendByte(RxData_f);			//蓝牙将收到的数据回传回去，用于测试
-			OLED_ShowHexNum(1, 8, RxData_f, 2);	//显示蓝牙接收的数据
+			int action = BlueTooth_action();    //获取蓝牙接收数据的动作
+			BlueTooth_SendArray(BlueTooth_RxPacket, 4);		//蓝牙将收到的数据回传回去，用于测试
+			if(action == Forward){
+				Car_GoStraight(1800);       
+			}
+			else if(action == Stop){
+				Car_Stop();
+			}
+
 		}
 	}
 }

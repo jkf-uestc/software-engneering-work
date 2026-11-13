@@ -32,6 +32,7 @@
 ".\objects\bluetooth.o"
 ".\objects\sonar.o"
 ".\objects\tick.o"
+".\objects\motor.o"
 ".\objects\main.o"
 ".\objects\stm32f10x_it.o"
 --strict --scatter ".\Objects\project.sct"
