@@ -8,16 +8,35 @@
 
 static uint8_t s_win_buf[KEY_WIN_SIZE]; // 环形窗口用于消抖
 static uint8_t s_win_idx = 0;           // 当前写入位置
-static uint8_t sum_high = 0u;  // 缓存当前窗口里1的总数，避免每次求和
+static uint8_t sum_high = 0;  // 缓存当前窗口里1的总数，避免每次求和
 
 //下标就是档位号
 static const int16_t s_speed[KEY_GEAR_MAX + 1] ={0,300,500,800};
 
 static uint8_t  s_gear      = 0;    //当前档位
 static uint8_t  s_stable    = 0;    //消抖后电平，1表示按下
-static uint8_t  s_long_done = 0;    /* 1 = 这次按压已按长按处理过，松手时不再加档 */
+static uint8_t  s_long_done = 0;    //1 = 这次按压已按长按处理过，松手时不再加档 
 static uint32_t s_last_scan = 0;    //上次成功扫描按键的时间戳
 static uint32_t s_press_ms  = 0;    //刚按下的时刻
+
+uint8_t Key_GetGear(void)
+{
+    return s_gear;
+}
+
+int16_t Key_GetSpeed(void)
+{
+    return s_speed[s_gear];
+}
+void Key_GearNext(void)
+{
+    s_gear = (uint8_t)((s_gear + 1u) % (KEY_GEAR_MAX + 1u));
+}
+
+void Key_GearStop(void)
+{
+    s_gear = 0;
+}
 
 void Key_Init(void)
 {
@@ -34,10 +53,10 @@ void Key_Init(void)
     s_press_ms  = 0;
 
     s_win_idx = 0;
-    sum_high = 0u;
+    sum_high = 0;
     for(uint8_t i = 0; i < KEY_WIN_SIZE; i++)
     {
-        s_win_buf[i] = 0u;
+        s_win_buf[i] = 0;
     }
 }
 
@@ -45,7 +64,6 @@ void Key_Task(void)
 {
     uint8_t  raw;
     uint32_t now;
-    // 删掉：uint8_t sum_high = 0;
 
     //限制5ms
     if (!Tick_Every(&s_last_scan, KEY_SCAN_MS))
@@ -102,24 +120,4 @@ void Key_Task(void)
         s_long_done = 1;
         Key_GearStop();                         
     }
-}
-
-uint8_t Key_GetGear(void)
-{
-    return s_gear;
-}
-
-int16_t Key_GetSpeed(void)
-{
-    return s_speed[s_gear];
-}
-
-void Key_GearNext(void)
-{
-    s_gear = (uint8_t)((s_gear + 1u) % (KEY_GEAR_MAX + 1u));
-}
-
-void Key_GearStop(void)
-{
-    s_gear = 0;
 }
