@@ -6,8 +6,15 @@
 extern uint8_t BlueTooth_TxPacket[];
 extern uint8_t BlueTooth_RxPacket[];
 extern uint8_t BlueTooth_RxFlag;
-#define Forward 0
+#define ForwardHigh 32
+#define ForwardMedium 31
+#define ForwardLow 30
+#define TurnLeft 1
+#define TurnRight 2
 #define Stop 4
+#define HighSpeed 3600
+#define MediumSpeed 1800
+#define LowSpeed 900
 void BlueTooth_Init(void);
 void BlueTooth_SendByte(uint8_t Byte);
 void BlueTooth_SendArray(uint8_t *Array, uint16_t Length);

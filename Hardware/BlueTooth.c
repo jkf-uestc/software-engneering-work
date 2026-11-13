@@ -5,7 +5,11 @@
 uint8_t BlueTooth_TxPacket[4];				//定义发送数据包数组，数据包格式：FF 01 02 03 04 FE
 uint8_t BlueTooth_RxPacket[4];				//定义接收数据包数组
 uint8_t BlueTooth_RxFlag;					//定义接收数据包标志位
-uint8_t ForwardPacket[4]={0x00,0x00,0x00,0x00};
+uint8_t ForwardMediumPacket[4]={0x00,0x00,0x01,0x03};
+uint8_t ForwardLowPacket[4]={0x00,0x00,0x00,0x03};
+uint8_t ForwardHighPacket[4]={0x00,0x00,0x02,0x03};
+uint8_t TurnLeftPacket[4]={0x00,0x00,0x00,0x01};
+uint8_t TurnRightPacket[4]={0x00,0x00,0x00,0x02};
 uint8_t StopPacket[4]={0x00,0x00,0x00,0x04};
 /*
 发送的数据包格式
@@ -223,12 +227,25 @@ uint8_t BlueTooth_CmpRxPacket(uint8_t *BlueTooth_RxPacket, uint8_t *ReferencePac
 
 int BlueTooth_action(void)
 {
-	if(BlueTooth_CmpRxPacket(BlueTooth_RxPacket, ForwardPacket)){
-		return 0;
+	if(BlueTooth_CmpRxPacket(BlueTooth_RxPacket, ForwardHighPacket)){
+		return 32;
 	}
-	if(BlueTooth_CmpRxPacket(BlueTooth_RxPacket, StopPacket)){
+		else if(BlueTooth_CmpRxPacket(BlueTooth_RxPacket, ForwardMediumPacket)){
+		return 31;
+	}
+	else if(BlueTooth_CmpRxPacket(BlueTooth_RxPacket, ForwardLowPacket)){
+		return 30;
+	}
+	else if(BlueTooth_CmpRxPacket(BlueTooth_RxPacket, TurnLeftPacket)){
+		return 1;
+	}
+	else if(BlueTooth_CmpRxPacket(BlueTooth_RxPacket, TurnRightPacket)){
+		return 2;
+	}
+	else if(BlueTooth_CmpRxPacket(BlueTooth_RxPacket, StopPacket)){
 		return 4;
 	}
+	
 	return -1;
 }
 

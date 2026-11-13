@@ -28,32 +28,29 @@ int main(void)
 	BlueTooth_Init();	//蓝牙初始化
 	Motor_Init();       //电机初始化
 
-    /*速度设置*/
-	// M1
-    M1_SetDir(MOTOR_FORWARD);
-    M1_SetPWM(1800);
-
-    // M2
-    M2_SetDir(MOTOR_FORWARD);
-    M2_SetPWM(1800);
-
-    // M3
-    M3_SetDir(MOTOR_BACKWARD);
-    M3_SetPWM(1800);
-
-    // M4
-    M4_SetDir(MOTOR_BACKWARD);
-    M4_SetPWM(1800);
-
-
 	while (1)
 	{
 		if (BlueTooth_GetRxFlag() == 1)			//检查蓝牙接收数据的标志位，为1表示接收到数据包，然后标志位清零
 		{
 			int action = BlueTooth_action();    //获取蓝牙接收数据的动作
 			BlueTooth_SendArray(BlueTooth_RxPacket, 4);		//蓝牙将收到的数据回传回去，用于测试
-			if(action == Forward){
-				Car_GoStraight(1800);       
+			if(action == ForwardHigh){
+				Car_GoStraight(HighSpeed);       
+				BlueTooth_SendString("High Speed:3600");
+			}
+			if(action == ForwardMedium){
+				Car_GoStraight(MediumSpeed);       
+				BlueTooth_SendString("Medium Speed:1800");
+			}
+			if(action == ForwardLow){
+				Car_GoStraight(LowSpeed);       
+				BlueTooth_SendString("Low Speed:900");
+			}
+			else if(action == TurnLeft){
+				Car_TurnLeft(1800);
+			}
+			else if(action == TurnRight){
+				Car_TurnRight(1800);
 			}
 			else if(action == Stop){
 				Car_Stop();
