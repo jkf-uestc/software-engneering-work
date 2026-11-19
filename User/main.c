@@ -34,9 +34,21 @@ int main(void)
 		{
 			int action = BlueTooth_action();    //获取蓝牙接收数据的动作
 			BlueTooth_SendArray(BlueTooth_RxPacket, 4);		//蓝牙将收到的数据回传回去，用于测试
+			if(action == BackHigh){
+				Car_GoBack(HighSpeed);       
+				BlueTooth_SendString("High Speed:3599");
+			}
+			if(action == BackMedium){
+				Car_GoBack(MediumSpeed);       
+				BlueTooth_SendString("Medium Speed:1800");
+			}
+			if(action == BackLow){
+				Car_GoBack(LowSpeed);       
+				BlueTooth_SendString("Low Speed:900");
+			}
 			if(action == ForwardHigh){
 				Car_GoStraight(HighSpeed);       
-				BlueTooth_SendString("High Speed:3600");
+				BlueTooth_SendString("High Speed:3599");
 			}
 			if(action == ForwardMedium){
 				Car_GoStraight(MediumSpeed);       

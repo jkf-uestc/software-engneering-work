@@ -1,16 +1,6 @@
 #include "stm32f10x.h"                  // Device header
 #include <stdio.h>
 #include <stdarg.h>
-
-uint8_t BlueTooth_TxPacket[4];				//定义发送数据包数组，数据包格式：FF 01 02 03 04 FE
-uint8_t BlueTooth_RxPacket[4];				//定义接收数据包数组
-uint8_t BlueTooth_RxFlag;					//定义接收数据包标志位
-uint8_t ForwardMediumPacket[4]={0x00,0x00,0x01,0x03};
-uint8_t ForwardLowPacket[4]={0x00,0x00,0x00,0x03};
-uint8_t ForwardHighPacket[4]={0x00,0x00,0x02,0x03};
-uint8_t TurnLeftPacket[4]={0x00,0x00,0x00,0x01};
-uint8_t TurnRightPacket[4]={0x00,0x00,0x00,0x02};
-uint8_t StopPacket[4]={0x00,0x00,0x00,0x04};
 /*
 发送的数据包格式
 	FF 01 02 03 04 FE
@@ -22,9 +12,28 @@ uint8_t StopPacket[4]={0x00,0x00,0x00,0x04};
 	FE：数据包尾，固定为0xFE
 发送数据包后stm32接收到数据进入中断函数，接收到的数据存入BlueTooth_RxPacket数组中，接收完成后将BlueTooth_RxFlag置1，表示接收完成
 后续操作根据BlueTooth_RxFlag的值进行判断
+接收到数据包后
+	1.调用BlueTooth_GetRxFlag()函数获取接收标志位，若返回值为1，则表示接收到数据包，标志位自动清零
+	2.调用BlueTooth_action()函数获取接收到的数据包的动作编号，返回值为动作编号
+	3.根据动作编号进行相应的操作
 */
 
 
+uint8_t BlueTooth_TxPacket[4];				//定义发送数据包数组，数据包格式：FF 01 02 03 04 FE
+uint8_t BlueTooth_RxPacket[4];				//定义接收数据包数组
+uint8_t BlueTooth_RxFlag;					//定义接收数据包标志位
+
+uint8_t ForwardMediumPacket[4]={0x00,0x00,0x01,0x03};
+uint8_t ForwardLowPacket[4]={0x00,0x00,0x00,0x03};
+uint8_t ForwardHighPacket[4]={0x00,0x00,0x02,0x03};
+
+uint8_t BackMediumPacket[4]={0x00,0x00,0x01,0x05};
+uint8_t BackLowPacket[4]={0x00,0x00,0x00,0x05};
+uint8_t BackHighPacket[4]={0x00,0x00,0x02,0x05};
+
+uint8_t TurnLeftPacket[4]={0x00,0x00,0x00,0x01};
+uint8_t TurnRightPacket[4]={0x00,0x00,0x00,0x02};
+uint8_t StopPacket[4]={0x00,0x00,0x00,0x04};
 
 /**
   * 函    数：串口初始化
@@ -244,6 +253,15 @@ int BlueTooth_action(void)
 	}
 	else if(BlueTooth_CmpRxPacket(BlueTooth_RxPacket, StopPacket)){
 		return 4;
+	}
+	else if(BlueTooth_CmpRxPacket(BlueTooth_RxPacket, BackHighPacket)){
+		return 52;
+	}
+	else if(BlueTooth_CmpRxPacket(BlueTooth_RxPacket, BackMediumPacket)){
+		return 51;
+	}
+	else if(BlueTooth_CmpRxPacket(BlueTooth_RxPacket, BackLowPacket)){
+		return 50;
 	}
 	
 	return -1;
