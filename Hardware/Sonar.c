@@ -38,30 +38,33 @@ static uint16_t Sonar_Median3(const uint16_t *v)
 }
 
 void Sonar_Init(void)
-{
-    GPIO_InitTypeDef gpio;
-    EXTI_InitTypeDef exti;
-    NVIC_InitTypeDef nvic;
-
-    RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOB | RCC_APB2Periph_AFIO, ENABLE);
-
-    /* PB4 上电默认是 JTAG 的 NJTRST，不关 JTAG 的话它永远读不到 ECHO。
-       关掉 JTAG、保留 SWD（SWJ_CFG=010），这样 PB3/PB4/PA15才能正常使用。
-       注意：这一句是全局副作用，但它必须在这里做——不然超声波没法工作。
-       顺便解放了 PA15（左前轮 IN2）。 */
+{    
+	/* 
+	PB4 上电默认是 JTAG 的 NJTRST，不关 JTAG 的话它永远读不到 ECHO。
+    关掉 JTAG、保留 SWD（SWJ_CFG=010），这样 PB3/PB4/PA15才能正常使用。
+    注意：这一句是全局副作用，但它必须在这里做——不然超声波没法工作。
+    顺便解放了 PA15（左前轮 IN2）。 
+	*/
     GPIO_PinRemapConfig(GPIO_Remap_SWJ_JTAGDisable, ENABLE);
-
+	
     /*TRIG = PB5，推挽输出，先拉低*/
-    GPIO_ResetBits(GPIOB, GPIO_Pin_5);
+    RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOB, ENABLE);
+	GPIO_InitTypeDef gpio;
     gpio.GPIO_Pin   = GPIO_Pin_5;
     gpio.GPIO_Mode  = GPIO_Mode_Out_PP;
     gpio.GPIO_Speed = GPIO_Speed_50MHz;
-    GPIO_Init(GPIOB, &gpio);
-
+    GPIO_Init(GPIOB, &gpio);	
+    GPIO_ResetBits(GPIOB, GPIO_Pin_5);	
+	
     /*ECHO = PB4，下拉输入（HC-SR04 空闲时是低电平）*/
     gpio.GPIO_Pin  = GPIO_Pin_4;
     gpio.GPIO_Mode = GPIO_Mode_IPD;
-    GPIO_Init(GPIOB, &gpio);
+    GPIO_Init(GPIOB, &gpio);	
+	
+	RCC_APB2PeriphClockCmd(RCC_APB2Periph_AFIO, ENABLE);
+
+    EXTI_InitTypeDef exti;
+    NVIC_InitTypeDef nvic;
 
     /*把EXTI4的输入源接到GPIOB的Pin4上*/
     GPIO_EXTILineConfig(GPIO_PortSourceGPIOB, GPIO_PinSource4);
@@ -118,8 +121,8 @@ void EXTI4_IRQHandler(void)
         else if (s_wait)
         {
             s_width_cy = now - s_rise_cy;
-            s_wait     = 0;
-            s_new      = 1; //CPU有待处理数据             
+            s_wait = 0;
+            s_new = 1; //CPU有待处理数据             
         }
 
         EXTI_ClearITPendingBit(EXTI_Line4); 
