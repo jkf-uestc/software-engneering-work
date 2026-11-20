@@ -101,7 +101,9 @@
         <sRunDeb>0</sRunDeb>
         <sLrtime>0</sLrtime>
         <bEvRecOn>1</bEvRecOn>
-        <nTsel>5</nTsel>
+        <bSchkAxf>0</bSchkAxf>
+        <bTchkAxf>0</bTchkAxf>
+        <nTsel>6</nTsel>
         <sDll></sDll>
         <sDllPa></sDllPa>
         <sDlgDll></sDlgDll>
@@ -166,6 +168,7 @@
       <pMultCmdsp></pMultCmdsp>
       <DebugDescription>
         <Enable>1</Enable>
+        <EnableFlashSeq>0</EnableFlashSeq>
         <EnableLog>0</EnableLog>
         <Protocol>2</Protocol>
         <DbgClock>10000000</DbgClock>
@@ -1038,8 +1041,8 @@
       <tvExp>0</tvExp>
       <tvExpOptDlg>0</tvExpOptDlg>
       <bDave2>0</bDave2>
-      <PathWithFileName>.\Hardware\Encoder.c</PathWithFileName>
-      <FilenameWithoutPath>Encoder.c</FilenameWithoutPath>
+      <PathWithFileName>.\Hardware\speed.c</PathWithFileName>
+      <FilenameWithoutPath>speed.c</FilenameWithoutPath>
       <RteFlg>0</RteFlg>
       <bShared>0</bShared>
     </File>
@@ -1050,8 +1053,8 @@
       <tvExp>0</tvExp>
       <tvExpOptDlg>0</tvExpOptDlg>
       <bDave2>0</bDave2>
-      <PathWithFileName>.\Hardware\Encoder.h</PathWithFileName>
-      <FilenameWithoutPath>Encoder.h</FilenameWithoutPath>
+      <PathWithFileName>.\Hardware\speed.h</PathWithFileName>
+      <FilenameWithoutPath>speed.h</FilenameWithoutPath>
       <RteFlg>0</RteFlg>
       <bShared>0</bShared>
     </File>
@@ -1062,8 +1065,8 @@
       <tvExp>0</tvExp>
       <tvExpOptDlg>0</tvExpOptDlg>
       <bDave2>0</bDave2>
-      <PathWithFileName>.\Hardware\speed.c</PathWithFileName>
-      <FilenameWithoutPath>speed.c</FilenameWithoutPath>
+      <PathWithFileName>.\Hardware\Encoder.c</PathWithFileName>
+      <FilenameWithoutPath>Encoder.c</FilenameWithoutPath>
       <RteFlg>0</RteFlg>
       <bShared>0</bShared>
     </File>
@@ -1074,8 +1077,8 @@
       <tvExp>0</tvExp>
       <tvExpOptDlg>0</tvExpOptDlg>
       <bDave2>0</bDave2>
-      <PathWithFileName>.\Hardware\speed.h</PathWithFileName>
-      <FilenameWithoutPath>speed.h</FilenameWithoutPath>
+      <PathWithFileName>.\Hardware\Encoder.h</PathWithFileName>
+      <FilenameWithoutPath>Encoder.h</FilenameWithoutPath>
       <RteFlg>0</RteFlg>
       <bShared>0</bShared>
     </File>
