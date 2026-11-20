@@ -744,6 +744,26 @@
               <FileType>5</FileType>
               <FilePath>.\Hardware\motor.h</FilePath>
             </File>
+            <File>
+              <FileName>speed.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Hardware\speed.c</FilePath>
+            </File>
+            <File>
+              <FileName>speed.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\Hardware\speed.h</FilePath>
+            </File>
+            <File>
+              <FileName>Encoder.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Hardware\Encoder.c</FilePath>
+            </File>
+            <File>
+              <FileName>Encoder.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\Hardware\Encoder.h</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>
