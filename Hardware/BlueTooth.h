@@ -2,6 +2,7 @@
 #define __BlueTooth_H
 
 #include <stdio.h>
+#include <stdint.h>		/* uint8_t/uint16_t/uint32_t：头文件自带，不能依赖调用方的包含顺序 */
 
 /*
 总共设置9个按键，左转，右转，高速前进，中速前进，低速前进，高速后退，中速后退，低速后退，停止
@@ -9,8 +10,8 @@
 */
 
 extern uint8_t BlueTooth_TxPacket[];
-extern uint8_t BlueTooth_RxPacket[];
-extern uint8_t BlueTooth_RxFlag;
+extern volatile uint8_t BlueTooth_RxPacket[];
+extern volatile uint8_t BlueTooth_RxFlag;
 #define ForwardHigh 32
 #define ForwardMedium 31
 #define ForwardLow 30
@@ -30,7 +31,7 @@ void BlueTooth_SendString(char *String);              //发送一个字符串
 void BlueTooth_SendNumber(uint32_t Number, uint8_t Length);          //发送一个数字
 void BlueTooth_Printf(char *format, ...);                //自己封装的printf函数
 uint8_t BlueTooth_GetFirstRxData(void);                //获得数据包第一个字节
-uint8_t BlueTooth_CmpRxPacket(uint8_t *BlueTooth_RxPacket, uint8_t *ReferencePacket);          //比较接收数据包和参考数据包
+uint8_t BlueTooth_CmpRxPacket(const volatile uint8_t *RxPacket, const uint8_t *ReferencePacket);          //比较接收数据包和参考数据包
 void BlueTooth_SendPacket(void);            //发送数据包
 uint8_t BlueTooth_GetRxFlag(void);            //获取串口接收数据包标志位
 int BlueTooth_action(void);                //获取蓝牙操作的动作，返回值为动作的编号

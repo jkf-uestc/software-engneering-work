@@ -16,8 +16,8 @@
 
 
 uint8_t BlueTooth_TxPacket[4];				//定义发送数据包数组，数据包格式：FF 01 02 03 04 FE
-uint8_t BlueTooth_RxPacket[4];				//定义接收数据包数组
-uint8_t BlueTooth_RxFlag;					//定义接收数据包标志位
+volatile uint8_t BlueTooth_RxPacket[4];		//接收数据包数组，中断里写、主循环里读，必须加volatile
+volatile uint8_t BlueTooth_RxFlag;			//接收数据包标志位，中断里写、主循环里读，必须加volatile
 
 uint8_t ForwardMediumPacket[4]={0x00,0x00,0x01,0x03};       //中速前进
 uint8_t ForwardLowPacket[4]={0x00,0x00,0x00,0x03};       	//低速前进
@@ -89,9 +89,10 @@ void BlueTooth_Init(void)
   */
 void BlueTooth_SendByte(uint8_t Byte)
 {
+	uint32_t Timeout = 100000;			//死等保护：时钟/外设异常时不会把主循环卡死
+	while (USART_GetFlagStatus(USART2, USART_FLAG_TXE) == RESET && --Timeout);	//等待发送数据寄存器空（TDR非空表示还没搬走）
 	USART_SendData(USART2, Byte);		//将字节数据写入数据寄存器，写入后USART自动生成时序波形
-	while (USART_GetFlagStatus(USART2, USART_FLAG_TXE) == RESET);	//等待发送完成，表示发送数据寄存器空，reset就是0，=0表示TDR非空，没有发送完成
-	/*下次写入数据寄存器会自动清除发送完成标志位，故此循环后，无需清除标志位*/
+	/*下一次写数据寄存器会自动清除TXE标志位，故此循环后无需手动清除*/
 }
 
 /**
@@ -116,7 +117,7 @@ void BlueTooth_SendArray(uint8_t *Array, uint16_t Length)
   */
 void BlueTooth_SendString(char *String)
 {
-	uint8_t i;
+	uint16_t i;						//必须不小于16位，8位变量在字符串超过255字节时会溢出成死循环
 	for (i = 0; String[i] != '\0'; i ++)//遍历字符数组（字符串），遇到字符串结束标志位后停止
 	{
 		BlueTooth_SendByte(String[i]);		//依次调用BlueTooth_SendByte发送每个字节数据
@@ -174,7 +175,7 @@ void BlueTooth_Printf(char *format, ...)
 	char String[100];				//定义字符数组
 	va_list arg;					//定义可变参数列表数据类型的变量arg
 	va_start(arg, format);			//从format开始，接收参数列表到arg变量
-	vsprintf(String, format, arg);	//使用vsprintf打印格式化字符串和参数列表到字符数组中
+	vsnprintf(String, sizeof(String), format, arg);	//限定长度，超长部分直接截断，避免栈溢出
 	va_end(arg);					//结束变量arg
 	BlueTooth_SendString(String);		//串口发送字符数组（字符串）
 }
@@ -187,9 +188,13 @@ void BlueTooth_Printf(char *format, ...)
   */
 void BlueTooth_SendPacket(void)
 {
+	uint32_t Timeout = 100000;
 	BlueTooth_SendByte(0xFF);
 	BlueTooth_SendArray(BlueTooth_TxPacket, 4);
 	BlueTooth_SendByte(0xFE);
+	/*TXE只表示数据寄存器已空，最后一个字节可能还在移位寄存器里，
+	  这里补等TC，保证整个包完整移出后才返回*/
+	while (USART_GetFlagStatus(USART2, USART_FLAG_TC) == RESET && --Timeout);
 }
 
 /**
@@ -219,11 +224,11 @@ uint8_t BlueTooth_GetFirstRxData(void)
   * 返 回 值：分支判断值
   * 注意事项：无
   */
-uint8_t BlueTooth_CmpRxPacket(uint8_t *BlueTooth_RxPacket, uint8_t *ReferencePacket)
+uint8_t BlueTooth_CmpRxPacket(const volatile uint8_t *RxPacket, const uint8_t *ReferencePacket)
 {
 	int i;
 	for(i=0;i<4;i++){
-		if(BlueTooth_RxPacket[i] != ReferencePacket[i]){
+		if(RxPacket[i] != ReferencePacket[i]){
 			return 0;
 		}
 	}
@@ -266,7 +271,7 @@ int BlueTooth_action(void)
 
 
 /**
-  * 函    数：USART3中断函数
+  * 函    数：USART2中断函数
   * 参    数：无
   * 返 回 值：无
   * 注意事项：此函数为中断函数，无需调用，中断触发后自动执行
@@ -295,10 +300,17 @@ void USART2_IRQHandler(void)
 		/*当前状态为1，接收数据包数据*/
 		else if (RxState == 1)
 		{
-			BlueTooth_RxPacket[pRxPacket++] = RxData;	//将数据存入数据包数组的指定位置
-			if (pRxPacket >= 4)			//如果收够4个数据
+			if (RxData == 0xFF)			//数据区里又出现包头，说明前面丢了字节，丢弃已收部分重新开始
 			{
-				RxState = 2;			//置下一个状态
+				pRxPacket = 0;
+			}
+			else
+			{
+				BlueTooth_RxPacket[pRxPacket++] = RxData;	//将数据存入数据包数组的指定位置
+				if (pRxPacket >= 4)			//如果收够4个数据
+				{
+					RxState = 2;			//置下一个状态
+				}
 			}
 		}
 		/*当前状态为2，接收数据包包尾*/
@@ -308,6 +320,11 @@ void USART2_IRQHandler(void)
 			{
 				RxState = 0;			//状态归0
 				BlueTooth_RxFlag = 1;		//接收数据包标志位置1，成功接收一个数据包
+			}
+			else						//包尾不对：丢掉这一帧并立刻重新找包头
+			{							//否则会一直卡在状态2，最后撞上任意0xFE时拿旧数据误触发一次动作
+				RxState = (RxData == 0xFF) ? 1 : 0;
+				pRxPacket = 0;
 			}
 		}
 		
