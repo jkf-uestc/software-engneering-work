@@ -23,6 +23,7 @@
 
 /* Includes ------------------------------------------------------------------*/
 #include "stm32f10x_it.h"
+#include "Encoder.h"
 
 /** @addtogroup STM32F10x_StdPeriph_Template
   * @{
@@ -134,6 +135,11 @@ void PendSV_Handler(void)
   */
 void SysTick_Handler(void)
 {
+	g_tick++;
+    if(g_tick % 20 == 0)
+    {
+        flag_20ms = 1;
+    }
 }
 
 /******************************************************************************/
