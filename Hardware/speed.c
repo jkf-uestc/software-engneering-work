@@ -16,7 +16,7 @@
 typedef struct
 {
     int32_t err_prev;       /* e(k-1) */
-    int32_t err_prev2;      /* e(k-2)，当前 Kd=0 用不到，留着便于以后开微分 */
+    int32_t err_prev2;      /* e(k-2)，Kd 非零时参与计算 */
     int32_t duty;           /* 当前输出，带符号，范围 -SPEED_DUTY_MAX ~ +SPEED_DUTY_MAX */
     int32_t speed;          /* 最近一次实测速度 mm/s */
     uint16_t stall_ms;      /* 堵转累计时间 */
@@ -30,6 +30,15 @@ static int16_t  s_wheel_target[4];      /* 四轮目标，带符号 */
 static uint8_t  s_enable;               /* 1 闭环工作，0 输出断开 */
 static uint8_t  s_fault;                /* 故障码 */
 static uint16_t s_vbat_mv;              /* 电池电压 mV */
+
+/* 运行期参数：初值取自 speed.h 的默认宏，可在线修改 */
+int32_t g_speed_dead_zone    = SPEED_DEAD_ZONE;
+int32_t g_speed_ff_gain_q10  = SPEED_FF_GAIN_Q10;
+int32_t g_speed_kp_q16       = SPEED_KP_Q16;
+int32_t g_speed_ki_q16       = SPEED_KI_Q16;
+int32_t g_speed_kd_q16       = SPEED_KD_Q16;
+int32_t g_speed_sync_on      = 1;       /* 默认开启左右同步补偿 */
+int32_t g_speed_trim         = 0;       /* 直行偏置，默认 0，跑偏时手动调 */
 
 /* 速度滑动平均缓冲（SPEED_AVG_N = 1 时不会被用到） */
 #if (SPEED_AVG_N > 1)
@@ -61,8 +70,8 @@ static int32_t Speed_FeedForward(int16_t target)
     if (target < 0) target = -target;
 
     /* 死区 + 比例项 */
-    base = (int32_t)SPEED_DEAD_ZONE
-         + (((int32_t)SPEED_FF_GAIN_Q10 * (int32_t)target) >> 10);
+    base = g_speed_dead_zone
+         + ((g_speed_ff_gain_q10 * (int32_t)target) >> 10);
 
     /* 电压归一化：电池电压低于基准时按比例放大 */
     if (s_vbat_mv < 6000)
@@ -301,6 +310,70 @@ void Speed_SetVbat(uint16_t mv)
     }
 }
 
+/* 在线改参：立即生效，下一个 10 ms 周期就按新值算
+ * 限幅只是防呆，避免误发一个过大数值把电机打到限幅 */
+void Speed_SetParam(uint8_t id, int32_t value)
+{
+    /* trim 允许负数（往左修），其余参数不允许 */
+    if (value < 0 && id != SPEED_PARAM_TRIM) value = 0;
+
+    switch (id)
+    {
+    case SPEED_PARAM_DEAD_ZONE:
+        if (value > 3000) value = 3000;
+        g_speed_dead_zone = value;
+        break;
+
+    case SPEED_PARAM_FF_GAIN:
+        if (value > 20480) value = 20480;       /* 20.0 × 1024 */
+        g_speed_ff_gain_q10 = value;
+        break;
+
+    case SPEED_PARAM_KP:
+        if (value > 1310720) value = 1310720;   /* 20.0 × 65536 */
+        g_speed_kp_q16 = value;
+        break;
+
+    case SPEED_PARAM_KI:
+        if (value > 655360) value = 655360;     /* 10.0 × 65536 */
+        g_speed_ki_q16 = value;
+        break;
+
+    case SPEED_PARAM_KD:
+        if (value > 655360) value = 655360;
+        g_speed_kd_q16 = value;
+        break;
+
+    case SPEED_PARAM_SYNC:
+        g_speed_sync_on = (value != 0) ? 1 : 0;
+        break;
+
+    case SPEED_PARAM_TRIM:
+        if (value >  100) value =  100;
+        if (value < -100) value = -100;
+        g_speed_trim = value;
+        break;
+
+    default:
+        break;
+    }
+}
+
+int32_t Speed_GetParam(uint8_t id)
+{
+    switch (id)
+    {
+    case SPEED_PARAM_DEAD_ZONE: return g_speed_dead_zone;
+    case SPEED_PARAM_FF_GAIN:   return g_speed_ff_gain_q10;
+    case SPEED_PARAM_KP:        return g_speed_kp_q16;
+    case SPEED_PARAM_KI:        return g_speed_ki_q16;
+    case SPEED_PARAM_KD:        return g_speed_kd_q16;
+    case SPEED_PARAM_SYNC:      return g_speed_sync_on;
+    case SPEED_PARAM_TRIM:      return g_speed_trim;
+    default:                    return 0;
+    }
+}
+
 void Speed_Tick(void)
 {
     uint8_t i;
@@ -311,6 +384,10 @@ void Speed_Tick(void)
     int32_t u;
     int32_t limit;
     int32_t u_ff;
+    int16_t tgt_base[4];        /* 同步补偿后的四轮目标 */
+    int32_t v_left;
+    int32_t v_right;
+    int32_t v_adj;
 
     /* ---------- 1. 取四路实测速度，换算成 mm/s 并归一化方向 ---------- */
     s_pid[WHEEL_LF].speed = Speed_ToMmps(v_LF, SPEED_SIGN_LF);
@@ -363,10 +440,81 @@ void Speed_Tick(void)
         return;
     }
 
-    /* ---------- 3. 逐轮增量式 PI ---------- */
+    /* ---------- 3. 航向修正 ----------
+     * 两级补偿，只在四轮目标完全一致（直行）时生效：
+     *   固定偏置压机械偏差，动态同步压转动不一致。
+     * 两者都只改变左右目标的分配，不改变总速度。 */
     for (i = 0; i < 4; i++)
     {
-        tgt = s_wheel_target[i];
+        tgt_base[i] = s_wheel_target[i];
+    }
+
+    /* 固定偏置：跑偏方向恒定时强行修正
+     * 正值 = 左加右减 = 车往右修；负值相反。
+     * 这是经验补偿，压的是机械偏差，不改总速度 */
+    if (g_speed_trim != 0 &&
+        s_wheel_target[WHEEL_LF] != 0 &&
+        s_wheel_target[WHEEL_LF] == s_wheel_target[WHEEL_LB] &&
+        s_wheel_target[WHEEL_LF] == s_wheel_target[WHEEL_RF] &&
+        s_wheel_target[WHEEL_LF] == s_wheel_target[WHEEL_RR])
+    {
+        if (s_wheel_target[WHEEL_LF] > 0)
+        {
+            tgt_base[WHEEL_LF] += (int16_t)g_speed_trim;
+            tgt_base[WHEEL_LB] += (int16_t)g_speed_trim;
+            tgt_base[WHEEL_RF] -= (int16_t)g_speed_trim;
+            tgt_base[WHEEL_RR] -= (int16_t)g_speed_trim;
+        }
+        else
+        {
+            tgt_base[WHEEL_LF] -= (int16_t)g_speed_trim;
+            tgt_base[WHEEL_LB] -= (int16_t)g_speed_trim;
+            tgt_base[WHEEL_RF] += (int16_t)g_speed_trim;
+            tgt_base[WHEEL_RR] += (int16_t)g_speed_trim;
+        }
+    }
+
+    if (g_speed_sync_on &&
+        s_wheel_target[WHEEL_LF] != 0 &&
+        s_wheel_target[WHEEL_LF] == s_wheel_target[WHEEL_LB] &&
+        s_wheel_target[WHEEL_LF] == s_wheel_target[WHEEL_RF] &&
+        s_wheel_target[WHEEL_LF] == s_wheel_target[WHEEL_RR])
+    {
+        v_left  = (s_pid[WHEEL_LF].speed + s_pid[WHEEL_LB].speed) / 2;
+        v_right = (s_pid[WHEEL_RF].speed + s_pid[WHEEL_RR].speed) / 2;
+
+        /* ×增益再 /2：Q8=256 时等于差值的一半 */
+        v_adj = ((v_left - v_right) * SPEED_SYNC_GAIN_Q8) >> 9;
+
+        if (v_adj >  SPEED_SYNC_MAX_ADJ) v_adj =  SPEED_SYNC_MAX_ADJ;
+        if (v_adj < -SPEED_SYNC_MAX_ADJ) v_adj = -SPEED_SYNC_MAX_ADJ;
+
+        if (s_wheel_target[WHEEL_LF] > 0)
+        {
+            tgt_base[WHEEL_LF] -= (int16_t)v_adj;
+            tgt_base[WHEEL_LB] -= (int16_t)v_adj;
+            tgt_base[WHEEL_RF] += (int16_t)v_adj;
+            tgt_base[WHEEL_RR] += (int16_t)v_adj;
+        }
+        else
+        {
+            tgt_base[WHEEL_LF] += (int16_t)v_adj;
+            tgt_base[WHEEL_LB] += (int16_t)v_adj;
+            tgt_base[WHEEL_RF] -= (int16_t)v_adj;
+            tgt_base[WHEEL_RR] -= (int16_t)v_adj;
+        }
+
+        for (i = 0; i < 4; i++)
+        {
+            if (tgt_base[i] >  SPEED_TARGET_MAX) tgt_base[i] =  SPEED_TARGET_MAX;
+            if (tgt_base[i] < -SPEED_TARGET_MAX) tgt_base[i] = -SPEED_TARGET_MAX;
+        }
+    }
+
+    /* ---------- 4. 逐轮增量式 PI ---------- */
+    for (i = 0; i < 4; i++)
+    {
+        tgt = tgt_base[i];          /* 用补偿后的目标 */
         spd = s_pid[i].speed;
 
         /* 目标为零：滑行，同时清状态，下次启动重新用前馈起头 */
@@ -416,13 +564,14 @@ void Speed_Tick(void)
         }
         else
         {
-            du = ((int32_t)SPEED_KP_Q16 * (e - s_pid[i].err_prev)) >> 16;
-            du += ((int32_t)SPEED_KI_Q16 * e) >> 16;
+            du = (g_speed_kp_q16 * (e - s_pid[i].err_prev)) >> 16;
+            du += (g_speed_ki_q16 * e) >> 16;
 
-#if (SPEED_KD_Q16 != 0)
-            du += ((int32_t)SPEED_KD_Q16 *
-                   (e - 2 * s_pid[i].err_prev + s_pid[i].err_prev2)) >> 16;
-#endif
+            if (g_speed_kd_q16 != 0)
+            {
+                du += (g_speed_kd_q16 *
+                       (e - 2 * s_pid[i].err_prev + s_pid[i].err_prev2)) >> 16;
+            }
         }
 
         u = s_pid[i].duty + du;
