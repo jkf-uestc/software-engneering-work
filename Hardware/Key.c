@@ -11,7 +11,7 @@ static uint8_t s_win_idx = 0;           // 当前写入位置
 static uint8_t sum_high = 0;  // 缓存当前窗口里1的总数，避免每次求和
 
 //下标就是档位号
-static const int16_t s_speed[KEY_GEAR_MAX + 1] ={0,300,500,800};
+static const int16_t s_speed[KEY_GEAR_MAX + 1] ={0,300,550,800};
 
 static uint8_t  s_gear      = 0;    //当前档位
 static uint8_t  s_stable    = 0;    //消抖后电平，1表示按下
