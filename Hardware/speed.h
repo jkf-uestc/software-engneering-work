@@ -9,6 +9,12 @@
  * 职责：目标速度 + 实测速度 -> 四路带符号占空比
  * 边界：只做控制运算，不读编码器、不写 PWM 寄存器
  *
+ * ---------------- 单位约定 ----------------
+ * 速度量：一律 mm/s，带符号，物理前进为正。
+ *         编码器输入的是 cm/s，模块内部统一乘 10 换成 mm/s。
+ * 占空比：一律 TIM1 比较值（0 ~ SPEED_DUTY_MAX = 3599），不是百分数。
+ * 时间量：一律 ms。
+ *
  * ---------------- 在系统中的位置 ----------------
  *
  *   按键(FN-07) ─┐
@@ -168,38 +174,131 @@ extern int32_t g_speed_trim;
 #define WHEEL_RF                2           /* M3 右前 */
 #define WHEEL_RR                3           /* M4 右后 */
 
-/* ---------------- 对外接口 ---------------- */
+/* ================= 对外接口 =================
+ * 单位约定（全部接口一致）：
+ *   速度量   mm/s，带符号，物理前进为正；
+ *   占空比   TIM1 比较值 0 ~ SPEED_DUTY_MAX(3599)，不是百分数；
+ *   时间量   ms。
+ */
 
-void    Speed_Init(void);                       /* 初始化，Motor_Init 之后调用 */
+/**
+ * @brief  初始化速度闭环
+ * @param  无
+ * @return 无
+ * @note   须在 Motor_Init() 之后调用；上电默认目标 0、闭环关闭
+ */
+void Speed_Init(void);
 
-/* 直行：四轮目标同值，单位 mm/s，自动限幅到 100~800 */
-void    Speed_SetTarget(int16_t mmps);
+/**
+ * @brief  设置直行目标速度，四轮同值
+ * @param  mmps 目标线速度，单位 mm/s；自动限幅到 SPEED_TARGET_MIN ~ SPEED_TARGET_MAX
+ * @return 无
+ */
+void Speed_SetTarget(int16_t mmps);
 
-/* 转向：dir = 1 原地左转，-1 原地右转，0 直行；单位 mm/s */
-void    Speed_SetTurn(int8_t dir, int16_t mmps);
+/**
+ * @brief  设置原地转向目标，左右两侧速度反向
+ * @param  dir  1 = 原地左转，-1 = 原地右转，0 = 直行（等价 Speed_SetTarget）
+ * @param  mmps 单侧轮速，单位 mm/s
+ * @return 无
+ */
+void Speed_SetTurn(int8_t dir, int16_t mmps);
 
-/* 任意四轮目标：w[i] 为各轮线速度 mm/s，正 = 该轮物理前进，负 = 后退 */
-void    Speed_SetWheelTarget(const int16_t w[4]);
+/**
+ * @brief  直接指定四轮目标速度
+ * @param  w 长度 4 的数组，按 WHEEL_LF / WHEEL_LB / WHEEL_RF / WHEEL_RR 排列，
+ *           单位 mm/s，带符号：正 = 该轮物理前进，负 = 后退
+ * @return 无
+ */
+void Speed_SetWheelTarget(const int16_t w[4]);
 
-void    Speed_Enable(uint8_t on);               /* 1 使能闭环，0 断开输出 */
-void    Speed_Stop(void);                       /* 目标清零 + 清 PID 状态 */
-void    Speed_ClearFault(void);                 /* 清故障标志，供复位调用 */
-void    Speed_SetVbat(uint16_t mv);             /* 喂电池电压，用于前馈归一化 */
+/**
+ * @brief  开 / 关闭环输出
+ * @param  on 1 = 使能闭环；0 = 断开输出（四路 PID 清零，占空比写 0）
+ * @return 无
+ */
+void Speed_Enable(uint8_t on);
 
-/* 在线改参：id 取 SPEED_PARAM_xxx
- * 死区为原始占空比；前馈增益为 Q10；Kp/Ki/Kd 为 Q16；trim 为 mm/s */
-void    Speed_SetParam(uint8_t id, int32_t value);
+/**
+ * @brief  停车：目标清零 + 四路 PID 清零 + 占空比写 0
+ * @param  无
+ * @return 无
+ */
+void Speed_Stop(void);
+
+/**
+ * @brief  清故障码与各路堵转计时
+ * @param  无
+ * @return 无
+ */
+void Speed_ClearFault(void);
+
+/**
+ * @brief  更新电池电压，前馈按此做电压归一化
+ * @param  mv 电池电压，单位 mV；传 0 视为无效值，忽略
+ * @return 无
+ */
+void Speed_SetVbat(uint16_t mv);
+
+/**
+ * @brief  在线修改闭环参数，下一个 10 ms 周期生效
+ * @param  id    参数编号，取 SPEED_PARAM_xxx
+ * @param  value 参数值，单位随 id 而定：死区 = TIM1 比较值，FF_GAIN = Q10，
+ *               Kp/Ki/Kd = Q16，SYNC = 0/1，TRIM = mm/s（允许负值）
+ * @return 无
+ */
+void Speed_SetParam(uint8_t id, int32_t value);
+
+/**
+ * @brief  读取闭环参数
+ * @param  id 参数编号，取 SPEED_PARAM_xxx
+ * @return 参数值，单位同 Speed_SetParam；id 非法返回 0
+ */
 int32_t Speed_GetParam(uint8_t id);
 
-/* 周期任务：每 10 ms 调用一次（FR-12） */
-void    Speed_Tick(void);
+/**
+ * @brief  闭环周期任务
+ * @param  无
+ * @return 无
+ * @note   每 10 ms 调用一次（FR-12）；调用前须已由 encoder 更新四路速度（cm/s）
+ */
+void Speed_Tick(void);
 
 /* ---------------- 查询接口 ---------------- */
 
-int16_t Speed_GetTarget(void);                  /* 当前目标车速 mm/s */
-int32_t Speed_GetWheelSpeed(uint8_t i);         /* 第 i 轮实测 mm/s */
-int16_t Speed_GetDuty(uint8_t i);               /* 第 i 轮当前占空比，带符号 */
-uint8_t Speed_GetFault(void);                   /* 0 正常，2 堵转 */
+/**
+ * @brief  读取当前直行目标速度
+ * @param  无
+ * @return 目标线速度，单位 mm/s，非负；转向时为单侧轮速幅值
+ */
+int16_t Speed_GetTarget(void);
+
+/**
+ * @brief  读取单轮实测线速度
+ * @param  i 轮序，取 WHEEL_xx；越界按 0 处理
+ * @return 实测线速度，单位 mm/s，带符号（物理前进为正）
+ */
+int32_t Speed_GetWheelSpeed(uint8_t i);
+
+/**
+ * @brief  读取单轮当前输出占空比
+ * @param  i 轮序，取 WHEEL_xx；越界按 0 处理
+ * @return 带符号占空比，单位 TIM1 比较值，范围 ±SPEED_DUTY_MAX
+ */
+int16_t Speed_GetDuty(uint8_t i);
+
+/**
+ * @brief  读取当前故障码
+ * @param  无
+ * @return SPEED_FAULT_NONE(0) 正常；SPEED_FAULT_STALL(2) 堵转
+ */
+uint8_t Speed_GetFault(void);
+
+/**
+ * @brief  查询闭环使能状态
+ * @param  无
+ * @return 1 = 已使能；0 = 已断开输出
+ */
 uint8_t Speed_IsEnabled(void);
 
 #endif
