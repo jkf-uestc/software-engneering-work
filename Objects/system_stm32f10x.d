@@ -1,7 +1,7 @@
 .\objects\system_stm32f10x.o: start\system_stm32f10x.c
 .\objects\system_stm32f10x.o: start\stm32f10x.h
 .\objects\system_stm32f10x.o: start\core_cm3.h
-.\objects\system_stm32f10x.o: C:\Users\ZYT\AppData\Local\Keil_v5\ARM\ARMCC\Bin\..\include\stdint.h
+.\objects\system_stm32f10x.o: D:\Keil_v5\ARM\ARMCC\Bin\..\include\stdint.h
 .\objects\system_stm32f10x.o: start\system_stm32f10x.h
 .\objects\system_stm32f10x.o: .\User\stm32f10x_conf.h
 .\objects\system_stm32f10x.o: .\Library\stm32f10x_adc.h

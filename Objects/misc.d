@@ -2,7 +2,7 @@
 .\objects\misc.o: Library\misc.h
 .\objects\misc.o: .\start\stm32f10x.h
 .\objects\misc.o: .\start\core_cm3.h
-.\objects\misc.o: C:\Users\ZYT\AppData\Local\Keil_v5\ARM\ARMCC\Bin\..\include\stdint.h
+.\objects\misc.o: D:\Keil_v5\ARM\ARMCC\Bin\..\include\stdint.h
 .\objects\misc.o: .\start\system_stm32f10x.h
 .\objects\misc.o: .\User\stm32f10x_conf.h
 .\objects\misc.o: .\Library\stm32f10x_adc.h

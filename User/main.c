@@ -12,6 +12,7 @@
 #include "Sonar.h"                      // 超声波
 #include "Avoid.h"                      // 避障阻塞
 #include "BlueTooth.h"                  // USART3 蓝牙遥控
+#include "MPU6050.h"					// 姿态控制
 
 /*==============================================================================
  *  MiniCar 主函数
@@ -27,6 +28,8 @@
  *      Sonar_Task()         内部自带 20ms 节拍，并且会自己发下一次触发
  *      Speed_Calc_20ms()    需要主循环每 20ms 调一次
  *      Speed_Tick()         需要主循环每 10ms 调一次（内部按 SPEED_TICK_MS 累计堵转）
+ *      Heading_Update()     跟随 20ms 测速节拍，必须排在 Speed_Calc_20ms() 之后
+ *      航向纠偏已并入 Heading_Update() 的卡尔曼滤波，不再需要单独调 Correct
  *      LED_Update(now)      非阻塞，每轮调用即可（靠相位算闪烁）
  *      Avoid_Task()         每轮调用，但必须排在 Sonar_Task() 之后
  *
@@ -44,7 +47,8 @@
 #define BT_SPEED_LOW		300		/* 蓝牙前进/后退 低档 mm/s */
 #define BT_SPEED_MED		500		/* 中档 */
 #define BT_SPEED_HIGH		800		/* 高档 */
-#define BT_TURN_MMPS		400		/* 蓝牙原地转向时单轮速度 mm/s */
+#define BT_TURN_MMPS		200		/* 定量转向速度 mm/s：实测 400 滑行多、200 更准 */
+#define BT_TURN_DEG		90.0f	/* 左右键按一下转的角度（本车 deg>0 = 顺时针） */
 
 /* 圆周率，只用来算测速系数 */
 #define CAR_PI			3.14159265f
@@ -85,17 +89,24 @@ static void BlueTooth_Task(void);
 static void Car_Enter(CarState_t next);
 static void Car_Update(void);
 static void Car_SetReverse(int16_t mmps);
-
+static void Task_Run(void);
+static void Task_Led(void);
+static void Task_Key(void);
+static void Task_Enc(void);
+static void Task_Speed(void);
+static void Task_Turn(void);
+static void Task_Sonar(void);
+static void Task_Avoid(void);
+static void Task_Bt(void);
+static void Task_Car(void);
 /*============================================================================*/
 /*                                   main                                     */
 /*============================================================================*/
 
+float g_dbg_yaw = 0.0f;		/* 调试：yaw 抄到全局，程序跑着也能在 Watch 里看 */
 int main(void)
 {
-	/* 这两个是 Tick_Every 的"上次触发时刻"，必须活着整个程序生命周期，
-	   绝不能放到循环体内 —— 每次重置成 0 会让 Tick_Every 永远判"该执行了" */
-	uint32_t t_enc = 0;			/* 20ms 测速节拍 */
-	uint32_t t_spd = 0;			/* 10ms 速度环节拍 */
+	/* 各任务的上次触发时刻现在统一放在下面的任务表 s_tasks[] 里 */
 
 	/*---------------------- 一、底层与外设初始化 ----------------------*/
 	/* Tick 必须最先：Key_Task / Sonar_Task / LED_Update 全都靠它取时间 */
@@ -141,56 +152,20 @@ int main(void)
 	Speed_Enable(0);
 	LED_SetMode(LED_MODE_READY);
 	s_state = CAR_READY;
+	
+	MPU6050_Init();
+	Delay_ms(500);				/*避免按键余震造成影响*/
+	Heading_Init();
+	Heading_Calibrate();
+	
+	Heading_TurnStart(90.0f,200);	/* 上电自检：定量转 90 度，非阻塞，由 Task_Turn 推进 */
+
 
 	/*---------------------------- 三、主循环 --------------------------*/
+	/* 裸机多任务：任务表统一调度，所有任务都不阻塞 */
 	while (1)
 	{
-		uint32_t now;
-		uint8_t  gear;
-
-		now = Tick_GetMs();
-
-		/*=================== 1. 指示灯：非阻塞刷新 ===================*/
-		/* 每轮调用，内部按相位算闪烁，不等待、不占 CPU */
-		LED_Update(now);
-
-		/*=================== 2. 按键：内部自带 5ms ===================*/
-		/* 短按换挡（0->1->2->3->0），长按 3 秒立刻归零停车。
-		   档位一变说明用户主动操作过，顺手解除避障阻塞（Avoid.c 要求
-		   阻塞必须由外部指令清除，不会自己解除）。 */
-		Key_Task();
-		gear = Key_GetGear();
-		if (gear != s_gear_prev)
-		{
-			s_gear_prev = gear;
-			Avoid_ClearBlock();
-			Speed_ClearFault();		/* 用户动过按键 = 明确的重置动作 */
-		}
-
-		/*=========== 3. 测速 20ms -> 速度环 10ms（顺序不能反）===========*/
-		/* Speed_Tick() 用的反馈是 encoder 算出的 v_LF~v_RR，
-		   所以必须先更新反馈再算 PI。两个 if 同拍触发时上面的先执行，
-		   正好满足这个顺序。 */
-		if (Tick_Every(&t_enc, ENC_PERIOD_MS))
-		{
-			Speed_Calc_20ms();
-		}
-		if (Tick_Every(&t_spd, SPEED_LOOP_MS))
-		{
-			Speed_Tick();
-		}
-
-		/*=========== 4. 超声波 + 避障：顺序固定，不能调换 ===========*/
-		/* Sonar_Task 自带 20ms 节拍，并在末尾自动发下一次触发；
-		   Avoid_Task 读的必须是刚刷新完的距离，所以必须紧跟其后 */
-		Sonar_Task();
-		Avoid_Task();
-
-		/*=================== 5. 蓝牙遥控 ===================*/
-		BlueTooth_Task();
-
-		/*=================== 6. 状态机 ===================*/
-		Car_Update();
+		Task_Run();
 	}
 }
 
@@ -214,7 +189,31 @@ static void BlueTooth_Task(void)
 		return;						/* 没收到新数据，直接返回，不耽误主循环 */
 	}
 
-	act = BlueTooth_action();
+	/* 自定义定量转角帧（给 60° 这类非常规角度用）：
+	   FF 02 XX 00 00 FE = 顺时针转 XX 度
+	   FF 03 XX 00 00 FE = 逆时针转 XX 度
+	   XX 为十六进制角度，0x01~0xB4 即 1~180 度。
+	   例：FF 02 3C 00 00 FE = 顺时针 60 度；FF 03 3C 00 00 FE = 逆时针 60 度 */
+	if ((BlueTooth_RxPacket[0]==0x02 || BlueTooth_RxPacket[0]==0x03)
+		&& BlueTooth_RxPacket[2]==0x00
+		&& BlueTooth_RxPacket[3]==0x00
+		&& BlueTooth_RxPacket[1]>=0x01
+		&& BlueTooth_RxPacket[1]<=0xB4)
+	{
+		float d=(float)BlueTooth_RxPacket[1];
+		s_bt_turn=0;
+		Avoid_ClearBlock();
+		if (BlueTooth_RxPacket[0]==0x02) {Heading_TurnStart(d,BT_TURN_MMPS);}	/* 正 = 顺时针 */
+		else                            {Heading_TurnStart(-d,BT_TURN_MMPS);}	/* 负 = 逆时针 */
+		return;
+	}	act = BlueTooth_action();
+
+	/* 定量转向进行中：只认 Stop（急停优先级最高），其它按键照样把帧消费掉，
+	   否则帧会一直挂在 RxFlag 里，等转向结束后补执行一次过期指令 */
+	if (act != Stop && Heading_TurnState() == TURN_RUN)
+	{
+		return;
+	}
 
 	switch (act)
 	{
@@ -239,13 +238,18 @@ static void BlueTooth_Task(void)
 			break;
 
 		case TurnLeft:
-			s_bt_active = 1; s_bt_turn = 1; s_bt_target = 0;
+			s_bt_turn = 0;					/* 只清持续转；保留 s_bt_active/s_bt_target，转完接着执行上一条运动指令 */
+			Avoid_ClearBlock();
+			Heading_TurnStart(-BT_TURN_DEG, BT_TURN_MMPS);	/* 按一下 = 车往左转 90 度（本车 deg<0 才是左，见下方说明） */
 			break;
 		case TurnRight:
-			s_bt_active = 1; s_bt_turn = -1; s_bt_target = 0;
+			s_bt_turn = 0;					/* 只清持续转；保留 s_bt_active/s_bt_target，转完接着执行上一条运动指令 */
+			Avoid_ClearBlock();
+			Heading_TurnStart(BT_TURN_DEG, BT_TURN_MMPS);	/* 按一下 = 车往右转 90 度 */
 			break;
 
 		case Stop:
+			Heading_TurnAbort();	/* 定量转向进行中也要能一按就停 */
 			/* 收到停止：交还按键控制，并解除避障阻塞 */
 			s_bt_active = 0;
 			s_bt_turn   = 0;
@@ -400,4 +404,113 @@ static void Car_Update(void)
 	{
 		Car_SetReverse(target);		/* target 为负 */
 	}
+}
+
+/*============================================================================*/
+/*                      裸机多任务：任务表 + 统一调度                         */
+/*============================================================================*/
+/* 每一项 = 一个任务 + 周期。period=0 表示每轮都跑，节流交给任务自己。
+   节拍归属的约定仍然成立：
+       Task_Enc   20ms：先测速，再积分姿态（顺序不能反）
+       Task_Turn  10ms：只做判断和发指令，不自己测速
+       Task_Car   每轮：最后跑，统一决策状态机 */
+typedef struct
+{
+	void (*fn)(void);
+	uint32_t period_ms;
+	uint32_t t_last;
+} Task_t;
+
+static Task_t s_tasks[] =
+{
+	{ Task_Led,     0,             0 },	/* 灯：非阻塞刷新 */
+	{ Task_Key,     0,             0 },	/* 键：内部自带 5ms */
+	{ Task_Enc,     ENC_PERIOD_MS, 0 },	/* 20ms：测速 + 航向积分 */
+	{ Task_Speed,   SPEED_LOOP_MS, 0 },	/* 10ms：速度环 */
+	{ Task_Turn,    10,            0 },	/* 10ms：定量转向状态机 */
+	{ Task_Sonar,   0,             0 },	/* 超声：内部自带 20ms */
+	{ Task_Avoid,   0,             0 },	/* 避障：必须紧跟超声 */
+	{ Task_Bt,      0,             0 },	/* 蓝牙遥控 */
+	{ Task_Car,     0,             0 },	/* 整车状态机 */
+};
+
+static void Task_Run(void)
+{
+	uint8_t i;
+	for (i=0;i<sizeof(s_tasks)/sizeof(s_tasks[0]);i++)
+	{
+		if (s_tasks[i].period_ms==0)
+		{
+			s_tasks[i].fn();
+		}
+		else if (Tick_Every(&s_tasks[i].t_last,s_tasks[i].period_ms))
+		{
+			s_tasks[i].fn();
+		}
+	}
+}
+
+static void Task_Led(void)
+{
+	LED_Update(Tick_GetMs());
+}
+
+static void Task_Key(void)
+{
+	uint8_t gear;
+	Key_Task();
+	gear=Key_GetGear();
+	if (gear!=s_gear_prev)
+	{
+		s_gear_prev=gear;
+		Avoid_ClearBlock();
+		Speed_ClearFault();
+	}
+}
+
+static void Task_Enc(void)
+{
+	Speed_Calc_20ms();
+	Heading_Update();	/* 必须排在测速之后：要用刚刷新的轮速 */
+}
+
+static void Task_Speed(void)
+{
+	Speed_Tick();
+}
+
+static void Task_Turn(void)
+{
+	if (Heading_TurnTask()==TURN_FAIL)
+	{
+		LED_SetMode(LED_MODE_FAULT);
+	}
+}
+
+/* 下面三个在转向期间直接跳过：
+   原地转向时超声朝向一直在变，避障会自己把自己刹住；遥控也不该插手 */
+static void Task_Sonar(void)
+{
+	if (Heading_TurnState()==TURN_RUN) {return;}
+	Sonar_Task();
+}
+
+static void Task_Avoid(void)
+{
+	if (Heading_TurnState()==TURN_RUN) {return;}
+	Avoid_Task();
+}
+
+static void Task_Bt(void)
+{
+	/* 不再整段跳过：帧必须被消费，否则转向结束后会补执行一条过期指令；
+	   转向中只放行 Stop，见 BlueTooth_Task() 里的判断 */
+	BlueTooth_Task();
+}
+
+static void Task_Car(void)
+{
+	g_dbg_yaw = Heading_GetYaw();	/* 调试：每轮抄一份，Watch 里能看 */
+	if (Heading_TurnState()==TURN_RUN) {return;}	/* 转向期间转向任务独占电机 */
+	Car_Update();
 }

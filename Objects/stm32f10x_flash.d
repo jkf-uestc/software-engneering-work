@@ -2,7 +2,7 @@
 .\objects\stm32f10x_flash.o: Library\stm32f10x_flash.h
 .\objects\stm32f10x_flash.o: .\start\stm32f10x.h
 .\objects\stm32f10x_flash.o: .\start\core_cm3.h
-.\objects\stm32f10x_flash.o: C:\Users\ZYT\AppData\Local\Keil_v5\ARM\ARMCC\Bin\..\include\stdint.h
+.\objects\stm32f10x_flash.o: D:\Keil_v5\ARM\ARMCC\Bin\..\include\stdint.h
 .\objects\stm32f10x_flash.o: .\start\system_stm32f10x.h
 .\objects\stm32f10x_flash.o: .\User\stm32f10x_conf.h
 .\objects\stm32f10x_flash.o: .\Library\stm32f10x_adc.h

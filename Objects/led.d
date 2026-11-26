@@ -1,7 +1,7 @@
 .\objects\led.o: Hardware\LED.c
 .\objects\led.o: .\start\stm32f10x.h
 .\objects\led.o: .\start\core_cm3.h
-.\objects\led.o: C:\Users\ZYT\AppData\Local\Keil_v5\ARM\ARMCC\Bin\..\include\stdint.h
+.\objects\led.o: D:\Keil_v5\ARM\ARMCC\Bin\..\include\stdint.h
 .\objects\led.o: .\start\system_stm32f10x.h
 .\objects\led.o: .\User\stm32f10x_conf.h
 .\objects\led.o: .\Library\stm32f10x_adc.h

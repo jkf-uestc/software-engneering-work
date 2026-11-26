@@ -2,7 +2,7 @@
 .\objects\stm32f10x_it.o: User\stm32f10x_it.h
 .\objects\stm32f10x_it.o: .\start\stm32f10x.h
 .\objects\stm32f10x_it.o: .\start\core_cm3.h
-.\objects\stm32f10x_it.o: C:\Users\ZYT\AppData\Local\Keil_v5\ARM\ARMCC\Bin\..\include\stdint.h
+.\objects\stm32f10x_it.o: D:\Keil_v5\ARM\ARMCC\Bin\..\include\stdint.h
 .\objects\stm32f10x_it.o: .\start\system_stm32f10x.h
 .\objects\stm32f10x_it.o: .\User\stm32f10x_conf.h
 .\objects\stm32f10x_it.o: .\Library\stm32f10x_adc.h
@@ -29,3 +29,4 @@
 .\objects\stm32f10x_it.o: .\Library\stm32f10x_usart.h
 .\objects\stm32f10x_it.o: .\Library\stm32f10x_wwdg.h
 .\objects\stm32f10x_it.o: .\Library\misc.h
+.\objects\stm32f10x_it.o: .\Hardware\Encoder.h

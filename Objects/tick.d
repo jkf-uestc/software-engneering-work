@@ -2,7 +2,7 @@
 .\objects\tick.o: Hardware\Tick.h
 .\objects\tick.o: .\start\stm32f10x.h
 .\objects\tick.o: .\start\core_cm3.h
-.\objects\tick.o: C:\Users\ZYT\AppData\Local\Keil_v5\ARM\ARMCC\Bin\..\include\stdint.h
+.\objects\tick.o: D:\Keil_v5\ARM\ARMCC\Bin\..\include\stdint.h
 .\objects\tick.o: .\start\system_stm32f10x.h
 .\objects\tick.o: .\User\stm32f10x_conf.h
 .\objects\tick.o: .\Library\stm32f10x_adc.h

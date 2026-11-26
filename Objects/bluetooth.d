@@ -1,7 +1,7 @@
 .\objects\bluetooth.o: Hardware\BlueTooth.c
 .\objects\bluetooth.o: .\start\stm32f10x.h
 .\objects\bluetooth.o: .\start\core_cm3.h
-.\objects\bluetooth.o: C:\Users\ZYT\AppData\Local\Keil_v5\ARM\ARMCC\Bin\..\include\stdint.h
+.\objects\bluetooth.o: D:\Keil_v5\ARM\ARMCC\Bin\..\include\stdint.h
 .\objects\bluetooth.o: .\start\system_stm32f10x.h
 .\objects\bluetooth.o: .\User\stm32f10x_conf.h
 .\objects\bluetooth.o: .\Library\stm32f10x_adc.h
@@ -28,5 +28,5 @@
 .\objects\bluetooth.o: .\Library\stm32f10x_usart.h
 .\objects\bluetooth.o: .\Library\stm32f10x_wwdg.h
 .\objects\bluetooth.o: .\Library\misc.h
-.\objects\bluetooth.o: C:\Users\ZYT\AppData\Local\Keil_v5\ARM\ARMCC\Bin\..\include\stdio.h
-.\objects\bluetooth.o: C:\Users\ZYT\AppData\Local\Keil_v5\ARM\ARMCC\Bin\..\include\stdarg.h
+.\objects\bluetooth.o: D:\Keil_v5\ARM\ARMCC\Bin\..\include\stdio.h
+.\objects\bluetooth.o: D:\Keil_v5\ARM\ARMCC\Bin\..\include\stdarg.h
