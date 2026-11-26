@@ -11,8 +11,8 @@
 #include "Key.h"                        // 单键：短按换挡、长按 3 秒停车
 #include "Sonar.h"                      // 超声波
 #include "Avoid.h"                      // 避障阻塞
-#include "BlueTooth.h"                  // USART3 蓝牙遥控
-#include "MPU6050.h"					// 姿态控制
+#include "BlueTooth.h"                  // USART2 蓝牙遥控（PA2/PA3）
+#include "MPU6050.h"			// 姿态控制
 
 /*==============================================================================
  *  MiniCar 主函数
@@ -143,7 +143,7 @@ int main(void)
 	/* 喂一个初始电池电压做前馈归一化。speed.h 的集成步骤要求这一句；
 	   接好 ADC 后改成每 200ms 喂一次实测值即可。 */
 	Speed_SetVbat(12000);
-	BlueTooth_Init();				/* USART3 9600 8N1 */
+	BlueTooth_Init();				/* USART2，PA2 TX / PA3 RX，9600 8N1 */
 
 	/*------------------------ 二、上电安全状态 ------------------------*/
 	/* 先让电机彻底不动，再点亮"就绪"，之后才进主循环 */
@@ -215,6 +215,22 @@ static void BlueTooth_Task(void)
 		return;
 	}
 
+	if (act < 0)
+	{
+		return;
+	}
+
+	/* 障碍移开后，需要收到新的运动指令才允许恢复。 */
+	if (act != Stop && Avoid_IsBlocked())
+	{
+		if (Sonar_GetStatus() != SONAR_ST_OK ||
+			Sonar_GetMm() <= AVOID_OBSTACLE_THRESHOLD_MM)
+		{
+			return;
+		}
+		Avoid_ClearBlock();
+	}
+
 	switch (act)
 	{
 		case ForwardLow:
@@ -259,7 +275,7 @@ static void BlueTooth_Task(void)
 			break;
 
 		default:
-			break;					/* -1 或未知包，忽略 */
+			break;					/* 未知动作，忽略 */
 	}
 }
 

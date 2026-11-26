@@ -10,6 +10,12 @@
  *
  * 为什么用增量式：算的是"这次比上次多给多少"，输出顶到限幅时直接丢弃
  * 这次增量即可，不必回退已经累积的积分项，天然抗饱和（T-01）。
+ *
+ * ---------------- 单位约定 ----------------
+ * 速度量：一律 mm/s（带符号，物理前进为正）。
+ *         编码器送进来的是 cm/s，在 Speed_ToMmps 里乘 10 换成 mm/s。
+ * 占空比：一律是 TIM1 比较值（0 ~ SPEED_DUTY_MAX = 3599），不是百分数。
+ * 时间  ：一律 ms。
  * ================================================================== */
 
 /* 单轮 PID 运行状态 */
@@ -17,16 +23,16 @@ typedef struct
 {
     int32_t err_prev;       /* e(k-1) */
     int32_t err_prev2;      /* e(k-2)，Kd 非零时参与计算 */
-    int32_t duty;           /* 当前输出，带符号，范围 -SPEED_DUTY_MAX ~ +SPEED_DUTY_MAX */
+    int32_t duty;           /* 当前输出，带符号，TIM1 比较值，范围 -SPEED_DUTY_MAX ~ +SPEED_DUTY_MAX */
     int32_t speed;          /* 最近一次实测速度 mm/s */
-    uint16_t stall_ms;      /* 堵转累计时间 */
+    uint16_t stall_ms;      /* 堵转累计时间，单位 ms */
     uint8_t started;        /* 1 = 已用前馈起头，避免输出过零时反复重置 */
 } PidState_t;
 
 static PidState_t s_pid[4];
 
 static int16_t  s_target;               /* 直行目标车速 mm/s */
-static int16_t  s_wheel_target[4];      /* 四轮目标，带符号 */
+static int16_t  s_wheel_target[4];      /* 四轮目标线速度，单位 mm/s，带符号 */
 static uint8_t  s_enable;               /* 1 闭环工作，0 输出断开 */
 static uint8_t  s_fault;                /* 故障码 */
 static uint16_t s_vbat_mv;              /* 电池电压 mV */
@@ -38,7 +44,7 @@ int32_t g_speed_kp_q16       = SPEED_KP_Q16;
 int32_t g_speed_ki_q16       = SPEED_KI_Q16;
 int32_t g_speed_kd_q16       = SPEED_KD_Q16;
 int32_t g_speed_sync_on      = 1;       /* 默认开启左右同步补偿 */
-int32_t g_speed_trim         = 0;       /* 直行偏置，默认 0，跑偏时手动调 */
+int32_t g_speed_trim         = 0;       /* 直行偏置，单位 mm/s，默认 0，跑偏时手动调 */
 
 /* 速度滑动平均缓冲（SPEED_AVG_N = 1 时不会被用到） */
 #if (SPEED_AVG_N > 1)
@@ -50,18 +56,23 @@ static uint8_t s_avg_div;       /* 10 ms -> 20 ms 分频计数 */
 
 /* ---------------- 私有函数 ---------------- */
 
-/* 把 encoder.c 的 float 速度统一换算成 mm/s 整数，并按 sign 归一化方向
- * 对方输出的是 cm/s（见 speed.h 里 SPEED_SRC_SCALE 的说明）
- * sign 的取值见 speed.h 的 SPEED_SIGN_*：镜像安装的轮子传 -1 */
+/**
+ * @brief  把编码器输出的浮点速度换算成整数 mm/s，并按安装方向统一符号
+ * @param  v    该轮实测线速度，单位 cm/s（encoder.c 按 cm 周长换算得到）
+ * @param  sign 方向系数，取 speed.h 的 SPEED_SIGN_xx：+1 保持，-1 取反（镜像安装的轮）
+ * @return 该轮实测线速度，单位 mm/s，带符号（物理前进为正）
+ */
 static int32_t Speed_ToMmps(float v, int8_t sign)
 {
     return (int32_t)(v * SPEED_SRC_SCALE) * (int32_t)sign;
 }
 
-/* 前馈：死区补偿 + 与目标速度成正比的基础占空比 + 电压归一化
- * 只给一个"大概对"的起点，剩下的残差由 PID 修正。
- * 比例项的作用是让起步直接落在工作点附近，否则积分要从死区爬到
- * 工作点，收敛时间会被拖到 2 秒以上（FR-13 要求 1.5 秒）。 */
+/**
+ * @brief  前馈估算：由目标速度直接给出一个"大致正确"的占空比起步值
+ * @param  target 目标线速度，单位 mm/s；内部取绝对值，负目标按正转幅值处理
+ * @return 前馈占空比，单位是 TIM1 比较值（0 ~ SPEED_DUTY_MAX）
+ * @note   含死区补偿 + 与目标速度成正比的项 + 电池电压归一化；残差交给 PID
+ */
 static int32_t Speed_FeedForward(int16_t target)
 {
     int32_t base;
@@ -89,8 +100,14 @@ static int32_t Speed_FeedForward(int16_t target)
     return u;
 }
 
-/* 输出到电机：这里负责"物理前进为正"到"左右轮镜像"的翻译
- * motor.c 的约定：左轮 FORWARD 是前进，右轮 BACKWARD 才是前进 */
+/**
+ * @brief  把带符号占空比翻译成方向 + PWM，写到对应轮的 M1~M4
+ * @param  i    轮序，取 WHEEL_LF / WHEEL_LB / WHEEL_RF / WHEEL_RR
+ * @param  duty 带符号占空比，单位是 TIM1 比较值，范围 -SPEED_DUTY_MAX ~ +SPEED_DUTY_MAX；
+ *              正 = 该轮物理前进
+ * @return 无
+ * @note   motor.c 的约定：左轮 FORWARD 是前进，右轮 BACKWARD 才是前进（镜像安装）
+ */
 static void Speed_Output(uint8_t i, int32_t duty)
 {
     uint16_t pwm;
@@ -138,8 +155,12 @@ static void Speed_Output(uint8_t i, int32_t duty)
     }
 }
 
-/* 堵转判定 E-08：占空比够大但轮子不转，累计到 500 ms 就报故障
- * 按"单轮"判定，不按整车车速，这样原地转向时四轮都在转，不会误报 */
+/**
+ * @brief  单轮堵转判定（E-08）：占空比够大而该轮转速近零，累计 500 ms 置堵转故障
+ * @param  i 轮序，取 WHEEL_xx；占空比与转速取自 s_pid[i]
+ * @return 无（故障码写入模块内的 s_fault）
+ * @note   按单轮判定而非整车车速，原地转向时四轮都在转，不会误报
+ */
 static void Speed_StallCheck(uint8_t i)
 {
     int32_t duty = s_pid[i].duty;
@@ -162,7 +183,12 @@ static void Speed_StallCheck(uint8_t i)
     }
 }
 
-/* 清空一路 PID 状态（换向、停止、故障时用） */
+/**
+ * @brief  清空一路 PID 状态（误差、输出、堵转计时、启动标志），回到"未启动"
+ * @param  i 轮序，取 WHEEL_xx
+ * @return 无
+ * @note   换向、停车、故障时调用
+ */
 static void Speed_ResetPid(uint8_t i)
 {
     s_pid[i].err_prev  = 0;
@@ -174,6 +200,12 @@ static void Speed_ResetPid(uint8_t i)
 
 /* ---------------- 对外函数 ---------------- */
 
+/**
+ * @brief  速度闭环初始化：四路 PID 清零、目标置 0、闭环关闭、电池电压取基准值
+ * @param  无
+ * @return 无
+ * @note   须在 Motor_Init() 之后调用
+ */
 void Speed_Init(void)
 {
     uint8_t i;
@@ -197,6 +229,12 @@ void Speed_Init(void)
 #endif
 }
 
+/**
+ * @brief  设置直行目标速度，四轮同值
+ * @param  mmps 目标线速度，单位 mm/s；内部取绝对值，非零时限幅到
+ *              SPEED_TARGET_MIN ~ SPEED_TARGET_MAX
+ * @return 无
+ */
 void Speed_SetTarget(int16_t mmps)
 {
     uint8_t i;
@@ -213,6 +251,12 @@ void Speed_SetTarget(int16_t mmps)
     }
 }
 
+/**
+ * @brief  设置原地转向目标：左右两侧速度反向，绕车体中心原地转
+ * @param  dir  转向：1 = 原地左转（左侧后退、右侧前进），-1 = 原地右转，0 = 直行
+ * @param  mmps 单侧轮速，单位 mm/s；内部取绝对值并限幅到 SPEED_TARGET_MIN ~ SPEED_TARGET_MAX
+ * @return 无
+ */
 void Speed_SetTurn(int8_t dir, int16_t mmps)
 {
     if (mmps < 0) mmps = -mmps;
@@ -241,6 +285,12 @@ void Speed_SetTurn(int8_t dir, int16_t mmps)
     }
 }
 
+/**
+ * @brief  直接指定四轮目标速度，供差速/全向上层使用
+ * @param  w 长度 4 的数组，按 WHEEL_LF / WHEEL_LB / WHEEL_RF / WHEEL_RR 排列，
+ *           单位 mm/s，带符号：正 = 该轮物理前进，负 = 后退
+ * @return 无
+ */
 void Speed_SetWheelTarget(const int16_t w[4])
 {
     uint8_t i;
@@ -257,6 +307,11 @@ void Speed_SetWheelTarget(const int16_t w[4])
     }
 }
 
+/**
+ * @brief  开 / 关闭环输出
+ * @param  on 1 = 使能闭环；0 = 断开输出（四路 PID 清零并把占空比写 0）
+ * @return 无
+ */
 void Speed_Enable(uint8_t on)
 {
     uint8_t i;
@@ -276,6 +331,11 @@ void Speed_Enable(uint8_t on)
     }
 }
 
+/**
+ * @brief  停车：目标清零 + 四路 PID 清零 + 占空比写 0，不改闭环使能状态
+ * @param  无
+ * @return 无
+ */
 void Speed_Stop(void)
 {
     uint8_t i;
@@ -290,6 +350,11 @@ void Speed_Stop(void)
     }
 }
 
+/**
+ * @brief  清故障码与各路堵转累计时间，供故障复位时调用
+ * @param  无
+ * @return 无
+ */
 void Speed_ClearFault(void)
 {
     uint8_t i;
@@ -302,6 +367,11 @@ void Speed_ClearFault(void)
     }
 }
 
+/**
+ * @brief  更新电池电压，供前馈做电压归一化
+ * @param  mv 电池电压，单位 mV；传 0 视为无效值，忽略本次调用
+ * @return 无
+ */
 void Speed_SetVbat(uint16_t mv)
 {
     if (mv != 0)
@@ -310,8 +380,15 @@ void Speed_SetVbat(uint16_t mv)
     }
 }
 
-/* 在线改参：立即生效，下一个 10 ms 周期就按新值算
- * 限幅只是防呆，避免误发一个过大数值把电机打到限幅 */
+/**
+ * @brief  在线修改闭环参数，立即生效，下一个 10 ms 周期就按新值计算
+ * @param  id    参数编号，取 SPEED_PARAM_DEAD_ZONE / FF_GAIN / KP / KI / KD / SYNC / TRIM
+ * @param  value 参数值，单位随 id 而定：
+ *               死区 = TIM1 比较值；FF_GAIN = Q10；Kp/Ki/Kd = Q16；
+ *               SYNC = 0/1；TRIM = mm/s（允许负值）
+ * @return 无
+ * @note   除 TRIM 外的负值按 0 处理；超上限按各参数上限截断，仅防误发
+ */
 void Speed_SetParam(uint8_t id, int32_t value)
 {
     /* trim 允许负数（往左修），其余参数不允许 */
@@ -359,6 +436,12 @@ void Speed_SetParam(uint8_t id, int32_t value)
     }
 }
 
+/**
+ * @brief  读取闭环参数当前值
+ * @param  id 参数编号，取 SPEED_PARAM_xxx
+ * @return 参数值，单位同 Speed_SetParam：死区 = TIM1 比较值，FF_GAIN = Q10，
+ *         Kp/Ki/Kd = Q16，SYNC = 0/1，TRIM = mm/s；id 非法时返回 0
+ */
 int32_t Speed_GetParam(uint8_t id)
 {
     switch (id)
@@ -374,6 +457,13 @@ int32_t Speed_GetParam(uint8_t id)
     }
 }
 
+/**
+ * @brief  闭环主运算：读四路实测速度 -> 航向修正 -> 逐轮增量式 PI -> 输出到电机
+ * @param  无
+ * @return 无
+ * @note   固定 10 ms 调用一次（FR-12）；进入前须由 encoder 更新
+ *         v_LF / v_LB / v_RF / v_RR（单位 cm/s，本函数内部换成 mm/s）
+ */
 void Speed_Tick(void)
 {
     uint8_t i;
@@ -384,7 +474,7 @@ void Speed_Tick(void)
     int32_t u;
     int32_t limit;
     int32_t u_ff;
-    int16_t tgt_base[4];        /* 同步补偿后的四轮目标 */
+    int16_t tgt_base[4];        /* 同步补偿后的四轮目标，单位 mm/s */
     int32_t v_left;
     int32_t v_right;
     int32_t v_adj;
@@ -601,29 +691,55 @@ void Speed_Tick(void)
 
 /* ---------------- 查询 ---------------- */
 
+/**
+ * @brief  读取当前直行目标速度
+ * @param  无
+ * @return 目标线速度，单位 mm/s，非负；转向时为单侧轮速幅值
+ */
 int16_t Speed_GetTarget(void)
 {
     return s_target;
 }
 
+/**
+ * @brief  读取某一路的实测线速度
+ * @param  i 轮序，取 WHEEL_xx；越界按 0 处理
+ * @return 实测线速度，单位 mm/s，带符号（物理前进为正）
+ */
 int32_t Speed_GetWheelSpeed(uint8_t i)
 {
     if (i > 3) return 0;
     return s_pid[i].speed;
 }
 
+/**
+ * @brief  读取某一路当前输出占空比
+ * @param  i 轮序，取 WHEEL_xx；越界按 0 处理
+ * @return 带符号占空比，单位是 TIM1 比较值，范围 -SPEED_DUTY_MAX ~ +SPEED_DUTY_MAX
+ */
 int16_t Speed_GetDuty(uint8_t i)
 {
     if (i > 3) return 0;
     return (int16_t)s_pid[i].duty;
 }
 
+/**
+ * @brief  读取当前故障码
+ * @param  无
+ * @return SPEED_FAULT_NONE(0) 正常；SPEED_FAULT_STALL(2) 堵转
+ */
 uint8_t Speed_GetFault(void)
 {
     return s_fault;
 }
 
+/**
+ * @brief  查询闭环是否处于使能状态
+ * @param  无
+ * @return 1 = 已使能；0 = 已断开输出
+ */
 uint8_t Speed_IsEnabled(void)
 {
     return s_enable;
 }
+
