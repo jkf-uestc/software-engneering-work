@@ -39,6 +39,13 @@
 #define ENC_PERIOD_MS		20		/* 测速周期 */
 #define SPEED_LOOP_MS		10		/* 速度环周期 */
 
+/* 上电自检：定量转 90 度。默认 0 = 关闭。
+   为什么要关：打开时每次上电都会直接驱动电机。只要轮子没转起来（阻力、
+   电池电压低、驱动 STBY 没拉高），速度环就会在 0.5 秒内判堵转 -> 故障灯亮，
+   同时 yaw 不变、转向永远到不了 90 度，看起来像"上电就坏"。
+   等电机方向、编码器、转向都标定好之后再改成 1。 */
+#define BOOT_SELFTEST_TURN	0
+
 /* 动作编号用 BlueTooth.h 的宏。注意 HighSpeed 那组是占空比，不是 mm/s */
 
 /*------------------------------ 运行状态 -----------------------------------*/
@@ -58,6 +65,15 @@ static uint8_t s_bt_active  = 0;	/* 1=蓝牙接管控制 */
 static int16_t s_bt_target  = 0;	/* 蓝牙目标速度 mm/s，负=后退 */
 static int8_t  s_bt_turn    = 0;	/* +1 原地左转，-1 原地右转，0 直行 */
 static uint8_t s_gear_prev  = 0;	/* 上一轮档位，用来判断用户是否动过按键 */
+static int16_t s_resume_target = 0;	/* 转向前正在跑的速度，转完恢复用 */
+static uint8_t s_turn_prev     = TURN_IDLE;	/* 上一拍的转向状态，检测 RUN->OK 上升沿 */
+
+/* 长按强制停车的独立检测（不依赖 Key.c）：
+   按键配置成下拉输入(IPD)，按下为高电平。main 自己读这个引脚、
+   自己计 3 秒，跟 Key.c 的换挡逻辑互不干扰。 */
+static uint32_t s_kp_ms   = 0;		/* 按下的时刻 */
+static uint8_t  s_kp_hold = 0;		/* 1 = 正在按住 */
+static uint8_t  s_kp_done = 0;		/* 1 = 本次按压已判定过长按 */
 
 /*------------------------------ 内部函数 -----------------------------------*/
 
@@ -125,7 +141,9 @@ int main(void)
 	Heading_Init();
 	Heading_Calibrate();
 	
+#if (BOOT_SELFTEST_TURN == 1)
 	Heading_TurnStart(90.0f,200);	/* 上电自检：定量转 90 度，非阻塞，由 Task_Turn 推进 */
+#endif
 
 
 	/*---------------------------- 三、主循环 --------------------------*/
@@ -187,19 +205,27 @@ static void BlueTooth_Task(void)
 		return;
 	}
 
-	/* 障碍移开后要重新收到运动指令才恢复 */
+	/* 避障阻塞时的放行规则（需求：识别到障碍物后仍要能遥控脱困）
+	       前进      -> 障碍还在就拒绝，往前冲没有意义
+	       后退      -> 放行，这是脱离动作，车往远离障碍物的方向走
+	       左转/右转 -> 放行，转向期间避障本来就要求让位
+	       停止      -> 上面已单独处理
+	   原来这里一律拒绝，导致"识别到障碍物后蓝牙完全没反应"。 */
 	if (act != Stop && Avoid_IsBlocked())
 	{
-		if (Sonar_GetStatus() != SONAR_ST_OK ||
-			Sonar_GetMm() <= AVOID_OBSTACLE_THRESHOLD_MM)
+		if (act == ForwardLow || act == ForwardMedium || act == ForwardHigh)
 		{
-			/* 障碍还在，指令作废，同时清掉旧目标 */
-			s_bt_active = 0;
-			s_bt_turn   = 0;
-			s_bt_target = 0;
-			return;
+			if (Sonar_GetStatus() != SONAR_ST_OK ||
+				Sonar_GetMm() <= AVOID_OBSTACLE_THRESHOLD_MM)
+			{
+				/* 障碍还在：前进作废，同时清掉旧目标，防止以后突然执行 */
+				s_bt_active = 0;
+				s_bt_turn   = 0;
+				s_bt_target = 0;
+				return;
+			}
 		}
-		Avoid_ClearBlock();
+		Avoid_ClearBlock();		/* 后退 / 转向：解除阻塞去脱困 */
 	}
 
 	switch (act)
@@ -225,7 +251,10 @@ static void BlueTooth_Task(void)
 			break;
 
 		case TurnLeft:
-			/* 转向会清掉之前的运动目标，转完停在原地 */
+			/* 记下转向前正在跑的速度，转完由 Task_Turn 恢复，继续跑。
+			   只有蓝牙开着的时候才需要记：按键开车时 s_bt_active=0，
+			   转完 Car_Update 会自然回到 Key_GetSpeed()，同样继续跑。 */
+			s_resume_target = (s_bt_active && s_bt_target != 0) ? s_bt_target : 0;
 			s_bt_active = 0;
 			s_bt_turn   = 0;
 			s_bt_target = 0;
@@ -233,11 +262,8 @@ static void BlueTooth_Task(void)
 			Heading_TurnStart(-BT_TURN_DEG, BT_TURN_MMPS);	/* 左转 90 度（本车 deg<0 才是左） */
 			break;
 		case TurnRight:
-			/* 转向是一次性动作，不能把之前的运动目标带过来。
-			   原来写着"保留 s_bt_active/s_bt_target，转完接着执行上一条
-			   运动指令"，实测后果：避障停车前点过前进，再点左转，转完
-			   车会自己往前冲 —— 就是"自动执行刚才点的前进"。
-			   现在转向即清目标，转完停在原地等新指令。 */
+			/* 同 TurnLeft：记下转向前速度，转完恢复 */
+			s_resume_target = (s_bt_active && s_bt_target != 0) ? s_bt_target : 0;
 			s_bt_active = 0;
 			s_bt_turn   = 0;
 			s_bt_target = 0;
@@ -248,6 +274,7 @@ static void BlueTooth_Task(void)
 		case Stop:
 			Heading_TurnAbort();	/* 定量转向进行中也要能一按就停 */
 			/* 收到停止：交还按键控制，并解除避障阻塞 */
+			s_resume_target = 0;	/* 明确停车，别再恢复旧速度 */
 			s_bt_active = 0;
 			s_bt_turn   = 0;
 			s_bt_target = 0;
@@ -435,10 +462,45 @@ static void Task_Led(void)
 
 static void Task_Key(void)
 {
-	uint8_t gear;
-	Key_Task();
-	gear=Key_GetGear();
-	if (gear!=s_gear_prev)
+	uint32_t now;
+	uint8_t  gear;
+	uint8_t  raw;
+	uint8_t  force_stop = 0;
+
+	Key_Task();						/* Key.c 的 5ms 采样、消抖、换挡照常工作 */
+	gear = Key_GetGear();
+
+	/* ---------- 自己判断长按，不依赖 Key.c 的事件 ----------
+	   直接读同一个引脚：IPD 下拉，按下 = 1。
+	   用时间戳判断而不是数调用次数，因为 Task_Key 是每轮都跑，周期不固定。 */
+	now = Tick_GetMs();
+	raw = GPIO_ReadInputDataBit(KEY_GPIO_PORT, KEY_GPIO_PIN);
+
+	if (raw)						/* 按住 */
+	{
+		if (!s_kp_hold)				/* 刚按下：记时刻 */
+		{
+			s_kp_hold = 1;
+			s_kp_ms   = now;
+			s_kp_done = 0;
+		}
+		else if (!s_kp_done &&
+		         (uint32_t)(now - s_kp_ms) >= KEY_LONG_PRESS_MS)	/* 满 3 秒 */
+		{
+			s_kp_done  = 1;
+			force_stop = 1;
+		}
+	}
+	else							/* 松手：复位，下一次按压重新计时 */
+	{
+		s_kp_hold = 0;
+		s_kp_done = 0;
+	}
+
+	/* 档位变化 或 长按满 3 秒，都算"用户要接管"。
+	   只用档位判断的话，蓝牙开车时档位本来就是 0，长按把它再设成 0，
+	   没有任何变化，按键就完全无效 —— 这就是"蓝牙运行时按按键停不下来"。 */
+	if (gear != s_gear_prev || force_stop)
 	{
 		s_gear_prev=gear;
 
@@ -467,12 +529,29 @@ static void Task_Speed(void)
 
 static void Task_Turn(void)
 {
-	if (Heading_TurnTask()==TURN_FAIL)
+	uint8_t st = Heading_TurnTask();
+
+	/* 转向完成（TURN_RUN -> TURN_OK 的上升沿，只执行一次）：
+	   把转向前的速度恢复回去，让车接着跑，而不是停在原地等指令。
+	   用 s_turn_prev 做边沿检测，否则 TURN_OK 会一直保持，每 10ms 都恢复一遍。 */
+	if (st == TURN_OK && s_turn_prev == TURN_RUN)
 	{
-		/* 转向超时：收回转向状态，交回状态机 */
+		if (s_resume_target != 0)
+		{
+			s_bt_active = 1;
+			s_bt_target = s_resume_target;
+		}
+		s_resume_target = 0;
+	}
+	else if (st == TURN_FAIL)
+	{
+		/* 转向超时：收回转向状态，交回状态机，不恢复旧速度 */
+		s_resume_target = 0;
 		Heading_TurnAbort();
 		Car_Enter(CAR_READY);
 	}
+
+	s_turn_prev = st;
 }
 
 /* 转向时超声和避障不跑：车在原地转，朝向一直在变 */
@@ -485,6 +564,13 @@ static void Task_Sonar(void)
 static void Task_Avoid(void)
 {
 	if (Heading_TurnState()==TURN_RUN) {return;}
+
+	/* 后退脱困期间不做避障。
+	   原因：后退指令刚把阻塞解除，车才刚开始倒，20ms 后超声测到的距离
+	   仍然小于阈值，Avoid_Task 会立刻重新判障并 Car_Stop()，
+	   表现就是"后退指令发出去但车不动"。脱困期间让避障让位。 */
+	if (s_bt_active && s_bt_target < 0) {return;}
+
 	Avoid_Task();
 }
 
